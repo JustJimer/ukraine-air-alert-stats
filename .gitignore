@@ -2,3 +2,5 @@ data/
 web/data/
 __pycache__/
 *.pyc
+node_modules/
+.wrangler/

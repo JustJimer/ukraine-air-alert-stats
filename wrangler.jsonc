@@ -1,11 +1,30 @@
 {
-  // Static assets only — there is no Worker script. The whole site is the
-  // packed dataset plus the page that filters it in the browser, so Cloudflare
-  // just serves files. Pages was the old home for this; Workers static assets
-  // is the supported path now.
-  "name": "ukraine-air-alert-stats",
+  // Testing branch. Deliberately a different Worker name from production, so
+  // deploying this can never overwrite the live site.
+  "name": "ukraine-air-alert-stats-testing",
   "compatibility_date": "2026-08-14",
+
+  // The site is still static files; the Worker exists only to record live
+  // alerts and to answer /api/live. Everything else falls through to ASSETS.
+  "main": "worker/index.js",
   "assets": {
-    "directory": "./web"
+    "directory": "./web",
+    "binding": "ASSETS"
+  },
+
+  "kv_namespaces": [
+    { "binding": "ALERTS", "id": "eadb8c8084ef406fa3d66e2267c6a4f4" }
+  ],
+
+  // Every two minutes. Transitions are timestamped from the feed's own clock,
+  // so this cadence sets how quickly the page notices a change, not how
+  // accurate the recorded times are. KV is only written when something
+  // actually changed, keeping well inside the free tier's daily writes.
+  "triggers": {
+    "crons": ["*/2 * * * *"]
+  },
+
+  "observability": {
+    "enabled": true
   }
 }

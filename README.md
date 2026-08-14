@@ -58,6 +58,38 @@ and a parity failure fails the build before anything deploys.
 
 No API token is needed: Cloudflare's GitHub App handles the connection.
 
+### The live layer (testing branch)
+
+The upstream dataset is rebuilt once a day, but alerts happen all day, so
+everything since the last rebuild is missing from it — and no free API hands
+you "the last 24 hours of alerts" ready made. What is available is the current
+state per oblast plus the moment it last changed, so `worker/` watches that and
+derives episodes from the transitions.
+
+- `worker/index.js` — a Cron Trigger polls the feed every two minutes and
+  serves the record at `/api/live`. Everything else falls through to the static
+  assets, so the site is unchanged.
+- `worker/live.mjs` — the logic, kept separate so it runs under plain Node.
+- `worker/live.test.mjs` — 13 checks, including the Kyiv-to-UTC conversion at
+  both DST offsets and the transition folding.
+
+Source: [ubilling.net.ua/aerialalerts](https://wiki.ubilling.net.ua/doku.php?id=aerialalertsapi),
+no key required. It reports Kyiv local time, which is converted to UTC.
+
+Two deliberate limits:
+
+- **Oblast level only** — that is all the free feed reports. The panel is shown
+  separately and is *not* folded into the statistics, because the dataset
+  records raions; averaging the two together would compare different things.
+- **Transitions are timestamped from the feed's own clock**, not from when we
+  polled, so the two-minute cadence sets how quickly the page notices a change,
+  not how accurate the recorded times are.
+
+Writes to KV happen only when something actually changed (plus a half-hourly
+heartbeat), which keeps a 720-tick day well inside the free tier's write
+allowance. The page hides the panel entirely when `/api/live` is absent, so the
+same `web/` works on a static-only deployment.
+
 ### Keeping the data fresh
 
 Workers Builds rebuilds on every push, but has no schedule of its own. So:

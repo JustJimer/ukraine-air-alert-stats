@@ -167,6 +167,17 @@
   .err { color: var(--danger); padding: 14px; }
   .standing .chart { border-left: 3px solid var(--nf-orange); }
 
+  #live .chart { border-left: 3px solid var(--nf-red); }
+  .live-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .live-count { font-size: 20px; font-weight: 600; color: var(--nf-red); }
+  .live-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .live-item {
+    background: var(--nf-blush); border: 1px solid var(--nf-salmon);
+    border-radius: 999px; padding: 3px 11px; font-size: 12px; white-space: nowrap;
+  }
+  .live-item .since { color: var(--muted); }
+  .live-quiet { color: var(--nf-dark-green); font-weight: 600; }
+
   #tip {
     position: fixed; z-index: 20; pointer-events: none; opacity: 0;
     transition: opacity .1s; background: var(--nf-super-dark-green); color: var(--nf-neutral-2);
@@ -250,6 +261,8 @@
   </div>
 
   <div class="chips" id="active-filters"></div>
+
+  <section id="live" hidden></section>
 
   <div id="body"><div class="empty">loading…</div></div>
 </main>
@@ -386,6 +399,7 @@ async function boot() {
 
   wire();
   applyState(readStore(STORE_LAST, null) || defaultState());
+  loadLive();                       // independent of the filters; never blocks them
 }
 
 function wire() {
@@ -609,6 +623,56 @@ function fill(select, values, placeholder, disabled) {
 }
 
 /* ---------- load & render ---------- */
+
+/* ---------- live layer ---------- */
+
+/* The packed dataset is rebuilt once a day, but alerts happen all day, so
+   everything since the last rebuild is missing from it. A Worker records
+   oblast-level transitions to cover that window; this shows what it has.
+   Absent on a static-only deployment, in which case the panel stays hidden. */
+async function loadLive() {
+  let live;
+  try {
+    const response = await fetch("api/live");
+    if (!response.ok) return;
+    live = await response.json();
+  } catch { return; }                       // no recorder deployed — fine
+  if (!live || live.warming_up) return;
+
+  const active = Object.entries(live.states || {})
+    .filter(([, s]) => s.active)
+    .sort((a, b) => (a[1].since || "").localeCompare(b[1].since || ""));
+
+  // Only what the packed dataset has not caught up with yet.
+  const since = META.coverage.last;
+  const recorded = (live.episodes || []).filter(e => e.started_at > since);
+
+  const box = $("live");
+  box.innerHTML = `
+    <div class="section-head">
+      <h2>Live — since the dataset was packed <em>· oblast level only</em></h2>
+      ${live.checkedAt ? `<span class="chip mini" style="cursor:default">checked ${kyivTime(live.checkedAt)} Kyiv</span>` : ""}
+    </div>
+    <div class="chart">
+      <div class="live-head">
+        ${active.length
+          ? `<span class="live-count">${active.length}</span> <span>oblast${active.length > 1 ? "s" : ""} under alert right now</span>`
+          : `<span class="live-quiet">No alerts active right now</span>`}
+      </div>
+      ${active.length ? `<div class="live-list">${active.map(([name, s]) =>
+        `<span class="live-item">${esc(name)} <span class="since">since ${kyivTime(s.since)}</span></span>`).join("")}</div>` : ""}
+      <div class="note">
+        ${recorded.length
+          ? `${num(recorded.length)} alert${recorded.length > 1 ? "s" : ""} recorded since the last stored alert
+             (${kyivTime(since)} Kyiv), ${num(recorded.filter(e => e.finished_at).length)} of them finished.`
+          : `Nothing new recorded since the last stored alert yet.`}
+        These are counted separately from the figures below and not mixed into them: this feed reports
+        whole oblasts, while the dataset records raions, so averaging the two together would compare
+        different things.
+      </div>
+    </div>`;
+  box.hidden = false;
+}
 
 function load() {
   if (suspend) return;
