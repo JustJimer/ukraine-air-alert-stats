@@ -116,6 +116,12 @@
   svg rect.h:hover { fill: var(--bar-alt-hi); }
   svg rect.sel { stroke: var(--nf-super-dark-green); stroke-width: 1.5; }
   svg rect.dim { fill: var(--bar-off); }
+  /* Drag selection band, drawn over the bars but never intercepting input. */
+  svg rect.band {
+    pointer-events: none; fill: var(--nf-reflex-green); fill-opacity: .4;
+    stroke: var(--nf-dark-green); stroke-width: 1; visibility: hidden;
+  }
+  svg[data-kind].dragging { cursor: ew-resize; }
 
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
@@ -217,6 +223,9 @@ let META = null;
 let HOURS = new Set();     // Kyiv hours selected on the hour chart
 let suspend = false;       // stops the cascade firing a reload mid-restore
 let firstLoad = true;      // the restored/default view is not a "recent"
+let MONTH_KEYS = [];       // month chart bar index -> "YYYY-MM"
+let drag = null;           // in-progress drag selection
+let swallowClick = false;  // a completed drag must not also fire its click
 
 const hm = m => {
   if (m == null) return "–";
@@ -229,6 +238,18 @@ const esc = s => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replac
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = ym => { const [y, m] = ym.split("-"); return `${MONTHS[+m - 1]} ${y}`; };
 const hh = h => `${String(h).padStart(2, "0")}:00`;
+
+/* "8,9,10,14" -> "08:00–10:59, 14:00" — drag selections are usually runs,
+   and listing every hour makes the chip unreadable. */
+function describeHours(hours) {
+  const runs = [];
+  for (const h of [...hours].sort((a, b) => a - b)) {
+    const last = runs.at(-1);
+    if (last && h === last[1] + 1) last[1] = h;
+    else runs.push([h, h]);
+  }
+  return runs.map(([a, b]) => a === b ? hh(a) : `${hh(a)}–${String(b).padStart(2, "0")}:59`).join(", ");
+}
 
 /* ---------- filter state ---------- */
 
@@ -289,10 +310,11 @@ function stateLabel(s) {
   if (oneMonth) bits.push(monthLabel(s.start.slice(0, 7)));
   else if (s.start && s.end) bits.push(`${s.start} → ${s.end}`);
 
-  // Name the hours while the list stays short, so two recents that differ
-  // only by hour do not render as the same label.
+  // Name the hours, so two recents differing only by hour stay distinguishable,
+  // but fall back to a count once the description gets unwieldy.
   if (s.hours?.length) {
-    bits.push(s.hours.length <= 3 ? s.hours.map(hh).join(", ") : `${s.hours.length} hours`);
+    const described = describeHours(s.hours);
+    bits.push(described.length <= 24 ? described : `${s.hours.length} hours`);
   }
   if (s.mode) bits.push(s.mode);
   return bits.join(" · ");
@@ -377,6 +399,7 @@ function wire() {
 
   // Charts and the ranking table act as filters.
   $("body").addEventListener("click", e => {
+    if (swallowClick) { swallowClick = false; return; }
     const bar = e.target.closest("[data-month], [data-hour]");
     if (bar?.dataset.month) return setPeriod(`${bar.dataset.month}-01`, nextMonth(bar.dataset.month));
     if (bar?.dataset.hour) return toggleHour(+bar.dataset.hour);
@@ -385,7 +408,84 @@ function wire() {
     if (row) return drillInto(row.dataset.area);
   });
 
+  wireDragSelect();
   wireTooltip();
+}
+
+/* ---------- hold and drag across bars to select a range ---------- */
+
+/* Which bar sits under this client x, in the chart's own coordinates.
+   The SVG may be rendered narrower than its viewBox inside a scrolling
+   container, so map through the rendered width rather than assuming 1:1. */
+function barIndexAt(svg, clientX) {
+  const box = svg.getBoundingClientRect();
+  const scale = svg.viewBox.baseVal.width / box.width;
+  const x = (clientX - box.left) * scale;
+  const pad = +svg.dataset.pad, bw = +svg.dataset.bw, count = +svg.dataset.count;
+  return Math.max(0, Math.min(count - 1, Math.floor((x - pad) / bw)));
+}
+
+function paintBand() {
+  const { svg, from, to } = drag;
+  const pad = +svg.dataset.pad, bw = +svg.dataset.bw;
+  const a = Math.min(from, to), b = Math.max(from, to);
+  const band = svg.querySelector("rect.band");
+  band.setAttribute("x", pad + a * bw);
+  band.setAttribute("width", (b - a + 1) * bw);
+  band.style.visibility = "visible";
+}
+
+function endDrag(apply) {
+  if (!drag) return;
+  const { svg, kind, from, to, moved } = drag;
+  svg.querySelector("rect.band").style.visibility = "hidden";
+  svg.classList.remove("dragging");
+  drag = null;
+
+  // A drag that never left its starting bar is really a click — leave it to
+  // the click handler so single-bar behaviour stays identical.
+  if (!apply || !moved || from === to) return;
+
+  // The browser fires a click straight after pointerup, which must not be read
+  // as a single-bar click. The flag self-clears on the next tick so it can
+  // never survive a drag that ended without producing a click.
+  swallowClick = true;
+  setTimeout(() => { swallowClick = false; }, 0);
+
+  const a = Math.min(from, to), b = Math.max(from, to);
+  if (kind === "month") setPeriod(`${MONTH_KEYS[a]}-01`, nextMonth(MONTH_KEYS[b]));
+  else { HOURS = new Set(Array.from({ length: b - a + 1 }, (_, i) => a + i)); load(); }
+}
+
+function wireDragSelect() {
+  const body = $("body");
+
+  body.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    // A drag ending outside the chart fires no click to consume the flag, so
+    // clear it here rather than letting it eat the next legitimate click.
+    swallowClick = false;
+    const svg = e.target.closest("svg[data-kind]");
+    if (!svg) return;
+    drag = { svg, kind: svg.dataset.kind, from: barIndexAt(svg, e.clientX), to: 0, moved: false };
+    drag.to = drag.from;
+    svg.classList.add("dragging");
+    svg.setPointerCapture(e.pointerId);
+    paintBand();
+    e.preventDefault();          // no text/image selection while dragging
+  });
+
+  body.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const i = barIndexAt(drag.svg, e.clientX);
+    if (i === drag.to) return;
+    drag.to = i;
+    drag.moved = true;
+    paintBand();
+  });
+
+  body.addEventListener("pointerup", () => endDrag(true));
+  body.addEventListener("pointercancel", () => endDrag(false));
 }
 
 const nextMonth = ym => {
@@ -428,6 +528,7 @@ function wireTooltip() {
   const hide = () => tip.classList.remove("on");
 
   document.addEventListener("mousemove", e => {
+    if (drag) return hide();     // the band is the feedback while dragging
     const bar = e.target.closest?.("[data-tip]");
     if (!bar) return hide();
 
@@ -475,9 +576,8 @@ async function load() {
 function renderActiveFilters(s) {
   const box = $("active-filters");
   if (!s.hours.length) { box.innerHTML = ""; return; }
-  const list = s.hours.map(hh).join(", ");
   box.innerHTML = `<span class="lead">Hour filter</span>`
-    + `<button class="chip active" data-clear-hours="1">${esc(list)} ✕</button>`;
+    + `<button class="chip active" data-clear-hours="1">${esc(describeHours(s.hours))} ✕</button>`;
 }
 
 function render(d, s) {
@@ -512,12 +612,12 @@ function render(d, s) {
     ${standingBlock(d.standing)}
 
     <section>
-      <h2>Alerts per month — ${esc(area)} <em>· click a bar to zoom to that month</em></h2>
+      <h2>Alerts per month — ${esc(area)} <em>· click a bar, or drag across bars for a date range</em></h2>
       <div class="chart">${monthChart(d.by_month, s)}</div>
     </section>
 
     <section>
-      <h2>When alerts start (hour of day, Kyiv time) <em>· click bars to filter by hour</em></h2>
+      <h2>When alerts start (hour of day, Kyiv time) <em>· click bars, or drag across them for a time range</em></h2>
       <div class="chart">${hourChart(d.by_hour, s.hours)}</div>
     </section>
 
@@ -548,7 +648,7 @@ function monthChart(rows, state) {
     const bh = (r.count / max) * (h - pad * 2);
     const x = pad + i * bw, y = h - pad - bh;
     const tip = `${monthLabel(r.month)}<br><b>${num(r.count)}</b> alerts<br><b>${num(r.hours)}</b> h total`
-              + `<br><span class="hint">click to zoom to this month</span>`;
+              + `<br><span class="hint">click to zoom · drag for a range</span>`;
     const attrs = `data-tip="${esc(tip)}" data-month="${r.month}"`;
     const label = rows.length <= 30 || i % 3 === 0
       ? `<text x="${x + bw / 2}" y="${h - 10}" text-anchor="middle">${r.month.slice(2)}</text>` : "";
@@ -558,10 +658,13 @@ function monthChart(rows, state) {
                   height="${Math.max(bh, 1)}" fill="var(--bar)" rx="2" ${attrs}/>${label}`;
   }).join("");
 
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  MONTH_KEYS = rows.map(r => r.month);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"
+      data-kind="month" data-pad="${pad}" data-bw="${bw}" data-count="${rows.length}">
       <text x="4" y="${pad - 8}">${num(max)} max</text>
       <line class="baseline" x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}"/>
-      ${bars}</svg>`;
+      ${bars}
+      <rect class="band" y="${pad}" height="${h - pad * 2}" x="0" width="0"/></svg>`;
 }
 
 function hourChart(hours, selectedHours) {
@@ -577,7 +680,7 @@ function hourChart(hours, selectedHours) {
     const on = picked.has(i);
     const tip = `${hh(i)}–${String(i).padStart(2, "0")}:59<br>`
               + `<b>${num(v)}</b> alerts started<br>${(v / total * 100).toFixed(1)}% of the period`
-              + `<br><span class="hint">click to ${on ? "remove from" : "add to"} the hour filter</span>`;
+              + `<br><span class="hint">click to ${on ? "remove" : "add"} · drag for a range</span>`;
     const attrs = `data-tip="${esc(tip)}" data-hour="${i}"`;
     const cls = `h hit ${filtering && !on ? "dim" : ""} ${on ? "sel" : ""}`;
     return `<rect class="hit" x="${x}" y="${pad}" width="${bw}" height="${h - pad * 2}" fill="transparent" ${attrs}/>
@@ -586,10 +689,12 @@ function hourChart(hours, selectedHours) {
             ${i % 2 === 0 ? `<text x="${x + bw / 2}" y="${h - 9}" text-anchor="middle">${i}</text>` : ""}`;
   }).join("");
 
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"
+      data-kind="hour" data-pad="${pad}" data-bw="${bw}" data-count="24">
       <text x="4" y="${pad - 8}">${num(max)} max</text>
       <line class="baseline" x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}"/>
-      ${bars}</svg>`;
+      ${bars}
+      <rect class="band" y="${pad}" height="${h - pad * 2}" x="0" width="0"/></svg>`;
 }
 
 function rankTable(rows, clickable) {

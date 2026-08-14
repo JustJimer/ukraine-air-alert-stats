@@ -51,6 +51,11 @@ keeps showing the full distribution so you can still see what you are selecting
 against); click a row in the busiest-areas table to drill one gazetteer level
 deeper. The active hour filter appears as a chip you can clear.
 
+**Hold and drag across bars to select a range** — a date range on the month
+chart, a time range on the hour chart. A band follows the pointer while you
+drag. A drag that never leaves its starting bar is treated as a click, so
+single-bar behaviour is unchanged.
+
 **Filters are remembered.** The last used selection is restored on the next
 visit, and the six most recent distinct selections appear as chips under the
 presets. *Reset filters* returns to the full range for the whole country.
