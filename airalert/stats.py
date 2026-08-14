@@ -16,7 +16,11 @@ Two things make this less trivial than "group by and average":
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pandas as pd
+
+KYIV = "Europe/Kyiv"
 
 # Frontline territories keep a siren declared continuously for months at a
 # time. Those records are real, but mixing them into duration statistics makes
@@ -158,12 +162,23 @@ def by_month(df: pd.DataFrame) -> list[dict]:
     ]
 
 
+def local_hour(df: pd.DataFrame) -> pd.Series:
+    """Hour of day each alert started, in Kyiv local time."""
+    return df["started_at"].dt.tz_convert(KYIV).dt.hour
+
+
+def select_hours(df: pd.DataFrame, hours: Sequence[int] | None) -> pd.DataFrame:
+    """Alerts that started during any of the given Kyiv hours."""
+    if not hours or df.empty:
+        return df
+    return df[local_hour(df).isin(list(hours))]
+
+
 def by_hour(df: pd.DataFrame) -> list[int]:
-    """How many alerts started in each hour of the day (UTC+3, Kyiv)."""
+    """How many alerts started in each hour of the day, Kyiv local time."""
     if df.empty:
         return [0] * 24
-    local = df["started_at"].dt.tz_convert("Europe/Kyiv").dt.hour
-    counts = local.value_counts()
+    counts = local_hour(df).value_counts()
     return [int(counts.get(hour, 0)) for hour in range(24)]
 
 
@@ -213,6 +228,7 @@ def report(
     end: pd.Timestamp | None = None,
     merge: bool | None = None,
     standing_days: float | None = STANDING_ALERT_DAYS,
+    hours: Sequence[int] | None = None,
 ) -> dict:
     """Full statistics payload for one area/period selection.
 
@@ -232,6 +248,15 @@ def report(
         standing = intervals[is_standing]
         intervals = intervals[~is_standing]
 
+    # The hour histogram is built before the hour filter is applied, so the
+    # chart keeps showing the whole distribution you are selecting against
+    # instead of collapsing to the hours already chosen.
+    hour_distribution = by_hour(intervals)
+
+    hours = sorted({int(h) for h in hours}) if hours else []
+    intervals = select_hours(intervals, hours)
+    declarations = select_hours(_drop_standing(selected, standing_days), hours)
+
     return {
         "area": {"oblast": oblast, "raion": raion, "hromada": hromada},
         "period": {
@@ -239,6 +264,7 @@ def report(
             "end": end.isoformat() if end is not None else None,
         },
         "mode": "merged" if merge else "raw",
+        "hours": hours,
         "summary": summarise(intervals),
         "declarations": int(len(selected)),
         "standing": {
@@ -248,6 +274,6 @@ def report(
             "examples": [_describe(row) for _, row in standing.nlargest(5, "duration_min").iterrows()],
         },
         "by_month": by_month(intervals),
-        "by_hour": by_hour(intervals),
-        "ranking": ranking(_drop_standing(selected, standing_days), "raion" if oblast else "oblast"),
+        "by_hour": hour_distribution,
+        "ranking": ranking(declarations, "raion" if oblast else "oblast"),
     }

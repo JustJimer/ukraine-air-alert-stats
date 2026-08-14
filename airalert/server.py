@@ -40,7 +40,7 @@ def _timestamp(value: str | None) -> pd.Timestamp | None:
 
 
 @lru_cache(maxsize=256)
-def _cached_report(oblast, raion, hromada, start, end, merge, standing_days) -> str:
+def _cached_report(oblast, raion, hromada, start, end, merge, standing_days, hours) -> str:
     payload = stats.report(
         _frame,
         oblast=oblast or None,
@@ -50,6 +50,7 @@ def _cached_report(oblast, raion, hromada, start, end, merge, standing_days) -> 
         end=_timestamp(end),
         merge=merge,
         standing_days=standing_days,
+        hours=hours,
     )
     return json.dumps(payload, ensure_ascii=False)
 
@@ -57,6 +58,16 @@ def _cached_report(oblast, raion, hromada, start, end, merge, standing_days) -> 
 def _merge_flag(mode: str) -> bool | None:
     """'' means let the statistics module choose based on the selected area."""
     return {"merged": True, "raw": False}.get(mode)
+
+
+def _hours(value: str) -> tuple[int, ...]:
+    """Parse "0,1,22" into a tuple — hashable, so lru_cache accepts it."""
+    hours = set()
+    for part in value.split(","):
+        part = part.strip()
+        if part.isdigit() and 0 <= int(part) <= 23:
+            hours.add(int(part))
+    return tuple(sorted(hours))
 
 
 def _standing_days(value: str) -> float | None:
@@ -99,6 +110,7 @@ class Handler(BaseHTTPRequestHandler):
                     value("end"),
                     _merge_flag(value("mode")),
                     _standing_days(value("standing")),
+                    _hours(value("hours")),
                 )
             except Exception as error:  # surface the reason in the UI
                 return self._send_json(json.dumps({"error": str(error)}), status=500)

@@ -45,6 +45,17 @@ Filters: oblast → raion → hromada cascade, from/to dates, quick period prese
 counting mode. Shows headline cards, alerts per month, start-hour distribution
 and a busiest-areas table.
 
+**The charts are filters.** Click a month bar to zoom the period to that month;
+click hour bars to toggle an hour-of-day filter (multi-select, and the histogram
+keeps showing the full distribution so you can still see what you are selecting
+against); click a row in the busiest-areas table to drill one gazetteer level
+deeper. The active hour filter appears as a chip you can clear.
+
+**Filters are remembered.** The last used selection is restored on the next
+visit, and the six most recent distinct selections appear as chips under the
+presets. *Reset filters* returns to the full range for the whole country.
+Both live in `localStorage`, so nothing leaves the machine.
+
 ## Command line
 
 ```bash
@@ -61,6 +72,7 @@ python -m airalert.cli --list-oblasts
 | `--from` / `--to` | period, `YYYY-MM-DD`, `--to` is exclusive |
 | `--raw` / `--merge` | override the counting mode |
 | `--standing-days N` | threshold for standing alerts, `0` to include them |
+| `--hours` | only alerts starting in these Kyiv hours, e.g. `22,23,0,1` |
 | `--update` | force a fresh download |
 | `--json` | full payload instead of the text report |
 

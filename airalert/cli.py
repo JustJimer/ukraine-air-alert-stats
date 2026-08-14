@@ -32,6 +32,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=stats.STANDING_ALERT_DAYS,
         help="alerts at least this long are reported separately, not averaged in (0 = keep them in)",
     )
+    parser.add_argument("--hours", help="only alerts starting in these Kyiv hours, e.g. 22,23,0,1")
     parser.add_argument("--list-oblasts", action="store_true")
     parser.add_argument("--list-raions", metavar="OBLAST")
     parser.add_argument("--json", action="store_true", help="print the full payload as JSON")
@@ -72,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         end=_timestamp(args.end),
         merge=True if args.merge else (False if args.raw else None),
         standing_days=args.standing_days or None,
+        hours=[int(h) for h in args.hours.split(",") if h.strip().isdigit()] if args.hours else None,
     )
 
     if args.json:
