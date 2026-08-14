@@ -42,8 +42,21 @@ thing to migrate away from.
 
 ### Setting it up
 
-Connect the repository in the Cloudflare dashboard (**Workers & Pages → Create
-→ Import a repository**) and set:
+Create it as a **Worker**, not a Pages project — *Create → Workers → Import a
+repository*. Pages ignores `wrangler.jsonc` (it looks for `wrangler.toml` with
+`pages_build_output_dir`), so with no output directory configured it tries to
+upload the whole repository and fails on the cached upstream CSV in `data/`:
+
+```
+Error: Pages only supports files up to 25 MiB in size
+  data/official_data_en.csv is 28.8 MiB
+```
+
+Raising that limit would not help. Cron Triggers are a Workers feature, so on
+Pages the live recorder and `/api/live` would simply not exist, and the site
+would look deployed while quietly missing half of itself.
+
+Then set:
 
 | Setting | Value |
 |---|---|
