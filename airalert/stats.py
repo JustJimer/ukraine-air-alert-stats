@@ -70,10 +70,28 @@ def select_period(
     return result
 
 
+def _empty_episodes() -> pd.DataFrame:
+    """An episode frame with no rows but the right dtypes.
+
+    Building it from an empty list instead would give object-dtype columns,
+    and numeric methods such as nlargest reject those — so a merged query that
+    happened to match nothing used to raise instead of reporting zero.
+    """
+    return pd.DataFrame(
+        {
+            "started_at": pd.Series(dtype="datetime64[ns, UTC]"),
+            "finished_at": pd.Series(dtype="datetime64[ns, UTC]"),
+            "parts": pd.Series(dtype="int64"),
+            "duration_min": pd.Series(dtype="float64"),
+            "ongoing": pd.Series(dtype="bool"),
+        }
+    )
+
+
 def merge_overlaps(df: pd.DataFrame) -> pd.DataFrame:
     """Collapse overlapping intervals into single territory-wide episodes."""
     if df.empty:
-        return pd.DataFrame(columns=["started_at", "finished_at", "duration_min", "ongoing", "parts"])
+        return _empty_episodes()
 
     frame = df.dropna(subset=["finished_at"]).sort_values("started_at")
     episodes: list[list] = []
@@ -84,6 +102,9 @@ def merge_overlaps(df: pd.DataFrame) -> pd.DataFrame:
             episodes[-1][2] += 1
         else:
             episodes.append([started, finished, 1])
+
+    if not episodes:
+        return _empty_episodes()
 
     merged = pd.DataFrame(episodes, columns=["started_at", "finished_at", "parts"])
     merged["duration_min"] = (merged["finished_at"] - merged["started_at"]).dt.total_seconds() / 60.0
@@ -152,12 +173,15 @@ def by_month(df: pd.DataFrame) -> list[dict]:
     counts = grouped.size()
     hours = grouped["duration_min"].sum(min_count=1) / 60.0
 
+    def total(period) -> float:
+        # A month with no finished alerts sums to NaN under min_count=1, and
+        # `nan or 0.0` yields NaN because NaN is truthy — which then serialises
+        # as a bare NaN token and makes the payload invalid JSON.
+        value = hours.get(period, 0.0)
+        return round(float(value), 1) if pd.notna(value) else 0.0
+
     return [
-        {
-            "month": period.strftime("%Y-%m"),
-            "count": int(count),
-            "hours": round(float(hours.get(period, 0.0) or 0.0), 1),
-        }
+        {"month": period.strftime("%Y-%m"), "count": int(count), "hours": total(period)}
         for period, count in counts.items()
     ]
 

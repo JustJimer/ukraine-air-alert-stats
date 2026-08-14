@@ -79,8 +79,10 @@ def load(dataset: str = "official", force_download: bool = False) -> pd.DataFram
     df["ongoing"] = df["finished_at"].isna()
     df["duration_min"] = (df["finished_at"] - df["started_at"]).dt.total_seconds() / 60.0
 
-    # A handful of rows in the upstream feed close before they open.
-    df.loc[df["duration_min"] < 0, "duration_min"] = pd.NA
+    # A handful of rows in the upstream feed close before they open. Blank them
+    # with NaN rather than pd.NA: assigning pd.NA upcasts the column to object
+    # dtype, which silently breaks every numeric method downstream.
+    df["duration_min"] = df["duration_min"].where(df["duration_min"] >= 0)
 
     return df.sort_values("started_at", ignore_index=True)
 

@@ -218,6 +218,7 @@
 
 <div id="tip"></div>
 
+<script src="stats.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const STORE_LAST = "airalert.last.v1";
@@ -305,7 +306,21 @@ const writeStore = (key, value) => {
 /* ---------- boot ---------- */
 
 async function boot() {
-  META = await (await fetch("/api/meta")).json();
+  // The whole dataset ships with the page — under a megabyte gzipped — so
+  // every filter is answered locally with no server and no round-trip.
+  let meta, buffer;
+  try {
+    [meta, buffer] = await Promise.all([
+      fetch("data/meta.json").then(r => r.json()),
+      fetch("data/alerts.bin").then(r => r.arrayBuffer()),
+    ]);
+  } catch (error) {
+    $("body").innerHTML = `<div class="err">Could not load the alert data: ${esc(error.message)}</div>`;
+    return;
+  }
+
+  AlertStats.load(meta, buffer);
+  META = { gazetteer: AlertStats.gazetteer(), coverage: meta.coverage, generated_at: meta.generated_at };
   const c = META.coverage;
   $("coverage").textContent =
     `${num(c.rows)} alert records · ${day(c.first)} → ${day(c.last)} · official feed`
@@ -539,16 +554,24 @@ function fill(select, values, placeholder, disabled) {
 
 /* ---------- load & render ---------- */
 
-async function load() {
+function load() {
   if (suspend) return;
   const s = readState();
-  const q = new URLSearchParams({ ...s, hours: s.hours.join(",") });
-
-  $("body").innerHTML = `<div class="empty">calculating…</div>`;
   renderActiveFilters(s);
 
-  const data = await (await fetch("/api/stats?" + q)).json();
-  if (data.error) { $("body").innerHTML = `<div class="err">${data.error}</div>`; return; }
+  let data;
+  try {
+    data = AlertStats.report({
+      oblast: s.oblast, raion: s.raion, hromada: s.hromada,
+      start: s.start, end: s.end,
+      merge: s.mode === "merged" ? true : s.mode === "raw" ? false : null,
+      standingDays: s.standing === "off" ? null : Number(s.standing),
+      hours: s.hours,
+    });
+  } catch (error) {
+    $("body").innerHTML = `<div class="err">${esc(error.message)}</div>`;
+    return;
+  }
 
   writeStore(STORE_LAST, s);
   render(data, s);

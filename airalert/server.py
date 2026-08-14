@@ -52,7 +52,9 @@ def _cached_report(oblast, raion, hromada, start, end, merge, standing_days, hou
         standing_days=standing_days,
         hours=hours,
     )
-    return json.dumps(payload, ensure_ascii=False)
+    # allow_nan=False: NaN is not valid JSON, so refuse to emit it rather than
+    # shipping a payload the browser cannot parse.
+    return json.dumps(payload, ensure_ascii=False, allow_nan=False)
 
 
 def _merge_flag(mode: str) -> bool | None:
@@ -92,6 +94,9 @@ class Handler(BaseHTTPRequestHandler):
         if route.path in ("/", "/index.html"):
             return self._send_file(WEB_DIR / "index.html", "text/html; charset=utf-8")
 
+        if not route.path.startswith("/api/"):
+            return self._send_static(route.path)
+
         if route.path == "/api/meta":
             return self._send_json(json.dumps({"gazetteer": _gazetteer, "coverage": _coverage}, ensure_ascii=False))
 
@@ -118,6 +123,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(body)
 
         self.send_error(404, "not found")
+
+    CONTENT_TYPES = {
+        ".html": "text/html; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".bin": "application/octet-stream",
+    }
+
+    def _send_static(self, url_path: str):
+        """Serve a file from web/, refusing anything that escapes it."""
+        target = (WEB_DIR / url_path.lstrip("/")).resolve()
+        if not target.is_relative_to(WEB_DIR.resolve()) or not target.is_file():
+            return self.send_error(404, "not found")
+        return self._send_file(target, self.CONTENT_TYPES.get(target.suffix, "application/octet-stream"))
 
     def _send_file(self, path: Path, content_type: str):
         try:
