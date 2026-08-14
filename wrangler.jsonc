@@ -1,0 +1,11 @@
+{
+  // Static assets only — there is no Worker script. The whole site is the
+  // packed dataset plus the page that filters it in the browser, so Cloudflare
+  // just serves files. Pages was the old home for this; Workers static assets
+  // is the supported path now.
+  "name": "ukraine-air-alert-stats",
+  "compatibility_date": "2026-08-14",
+  "assets": {
+    "directory": "./web"
+  }
+}

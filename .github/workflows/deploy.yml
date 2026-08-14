@@ -38,9 +38,10 @@ jobs:
       - name: Drop the test fixture
         run: rm -f web/data/parity.json web/parity.html
 
-      - name: Deploy to Cloudflare Pages
+      # Deploys web/ as Workers static assets, configured in wrangler.jsonc.
+      - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web --project-name=ukraine-air-alert-stats
+          command: deploy

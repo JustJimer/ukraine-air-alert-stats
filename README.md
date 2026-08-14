@@ -30,12 +30,23 @@ whole dataset into a 2.8 MB binary (0.97 MB gzipped) that ships with the page,
 and `web/stats.js` does all the filtering in the browser — no API, no server,
 no cold starts. A filter takes about 3 ms.
 
-`.github/workflows/deploy.yml` rebuilds and deploys to Cloudflare Pages on
-every push to `main`, **daily at 04:20 UTC** so new alerts appear without
-anyone doing anything, and on demand via *Run workflow*.
+`.github/workflows/deploy.yml` rebuilds and deploys on every push to `main`,
+**daily at 04:20 UTC** so new alerts appear without anyone doing anything, and
+on demand via *Run workflow*.
 
-Deploying needs two repository secrets: `CLOUDFLARE_API_TOKEN` (a token with
-the *Cloudflare Pages — Edit* permission) and `CLOUDFLARE_ACCOUNT_ID`.
+The target is **Workers static assets** (`wrangler.jsonc`), not Pages. There is
+no Worker script — Cloudflare simply serves `web/`. Pages would also work, but
+Cloudflare now documents Workers as the path for static sites and Pages as the
+thing to migrate away from.
+
+Deploying needs two repository secrets:
+
+- `CLOUDFLARE_API_TOKEN` — an API token with **Workers Scripts: Edit** and
+  **Account Settings: Read**
+- `CLOUDFLARE_ACCOUNT_ID`
+
+Nothing needs creating in the dashboard first: `wrangler deploy` creates the
+Worker on its first run.
 
 ## Install
 
