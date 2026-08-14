@@ -4,10 +4,10 @@ Statistics over Ukrainian air raid alerts: **how many**, **how long on average**
 **shortest** and **longest**, filtered by **period** and by **gazetteer level**
 (all country / oblast / raion / hromada).
 
-> **Estimated figures.** The logic here was written with AI and has not been
-> fully reviewed. Treat the output as an indication rather than a source of
-> record, and check anything you rely on against the source dataset. The page
-> carries the same notice.
+> **Treat these figures as estimates.** Source data comes from the
+> [ukrainian-air-raid-sirens-dataset](https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset),
+> and the processing behind them may contain mistakes. The page carries the
+> same notice.
 
 No logger was needed — a complete, free, daily-updated historical dataset already exists.
 

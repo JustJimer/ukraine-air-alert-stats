@@ -50,9 +50,11 @@
   h1 span { color: var(--nf-green); }
   .coverage { color: var(--muted); font-size: 12px; }
 
+  /* Neutral rather than alarm-coloured: this is provenance and a caveat,
+     not a warning about something being wrong. */
   .disclaimer {
-    background: var(--nf-blush);
-    border-bottom: 1px solid var(--nf-salmon);
+    background: var(--nf-neutral-1);
+    border-bottom: 1px solid var(--line);
     padding: 11px 24px;
     font-size: 12.5px;
     line-height: 1.5;
@@ -169,10 +171,12 @@
 </header>
 
 <div class="disclaimer" role="note">
-  <strong>Estimated figures — use as an indication, not a source of record.</strong>
-  The logic behind these statistics was written with AI and has not been fully reviewed.
-  Check anything you intend to rely on against the
-  <a href="https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset" target="_blank" rel="noopener noreferrer">source dataset</a>.
+  <strong>Treat these figures as estimates.</strong>
+  Source data comes from the
+  <a href="https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset" target="_blank" rel="noopener noreferrer">ukrainian-air-raid-sirens-dataset</a>,
+  and the processing behind them may contain mistakes — the
+  <a href="https://github.com/JustJimer/ukraine-air-alert-stats" target="_blank" rel="noopener noreferrer">code is open</a>
+  if you want to check something.
 </div>
 
 <main>
