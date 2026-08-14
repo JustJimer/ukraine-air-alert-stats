@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ukraine Air Alert Stats</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171c22; --line: #262e38;
+    --ink: #e6edf3; --muted: #8b98a6; --accent: #ffd23f; --accent-dim: #6b5c1e;
+    --bar: #3d7eff; --danger: #ff6b5b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
+  h1 span { color: var(--accent); }
+  .coverage { color: var(--muted); font-size: 12px; }
+  main { padding: 20px 24px 60px; max-width: 1180px; }
+
+  .filters {
+    display: grid; gap: 12px; align-items: end;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px; margin-bottom: 8px;
+  }
+  label { display: block; font-size: 11px; text-transform: uppercase;
+          letter-spacing: .6px; color: var(--muted); margin-bottom: 5px; }
+  select, input {
+    width: 100%; background: #0d1116; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit;
+  }
+  select:focus, input:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent); }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 22px; }
+  .presets button {
+    background: var(--panel); color: var(--muted); border: 1px solid var(--line);
+    border-radius: 999px; padding: 5px 13px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .presets button:hover { color: var(--ink); border-color: var(--accent); }
+
+  .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .card .k { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  .card .v { font-size: 25px; font-weight: 600; margin-top: 5px; }
+  .card .s { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .card.hi .v { color: var(--accent); }
+
+  section { margin-top: 30px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px;
+       color: var(--muted); font-weight: 600; margin: 0 0 12px; }
+
+  .chart { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 10px; padding: 16px; overflow-x: auto; }
+  svg { display: block; }
+  svg text { fill: var(--muted); font-size: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  .err { color: var(--danger); padding: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ukraine <span>Air Alert</span> Stats</h1>
+  <div class="coverage" id="coverage">loading…</div>
+</header>
+
+<main>
+  <div class="filters">
+    <div>
+      <label for="oblast">Oblast</label>
+      <select id="oblast"><option value="">All country</option></select>
+    </div>
+    <div>
+      <label for="raion">Raion</label>
+      <select id="raion" disabled><option value="">All raions</option></select>
+    </div>
+    <div>
+      <label for="hromada">Hromada</label>
+      <select id="hromada" disabled><option value="">All hromadas</option></select>
+    </div>
+    <div>
+      <label for="start">From</label>
+      <input type="date" id="start">
+    </div>
+    <div>
+      <label for="end">To</label>
+      <input type="date" id="end">
+    </div>
+    <div>
+      <label for="standing">Standing alerts</label>
+      <select id="standing">
+        <option value="7">Separate if ≥ 7 days</option>
+        <option value="1">Separate if ≥ 24 hours</option>
+        <option value="30">Separate if ≥ 30 days</option>
+        <option value="off">Include in statistics</option>
+      </select>
+    </div>
+    <div>
+      <label for="mode">Counting</label>
+      <select id="mode">
+        <option value="">Auto</option>
+        <option value="merged">Merged episodes</option>
+        <option value="raw">Raw declarations</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="presets" id="presets">
+    <button data-months="1">Last month</button>
+    <button data-months="3">Last 3 months</button>
+    <button data-months="12">Last 12 months</button>
+    <button data-year="2026">2026</button>
+    <button data-year="2025">2025</button>
+    <button data-year="2024">2024</button>
+    <button data-year="2023">2023</button>
+    <button data-year="2022">2022</button>
+    <button data-all="1">All time</button>
+  </div>
+
+  <div id="body"><div class="empty">loading…</div></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let META = null;
+
+const hm = m => {
+  if (m == null) return "–";
+  const t = Math.round(m), h = Math.floor(t / 60), r = t % 60;
+  return h ? `${h}h ${String(r).padStart(2, "0")}m` : `${r}m`;
+};
+const num = n => (n ?? 0).toLocaleString("en-US");
+const day = s => (s || "").slice(0, 10);
+
+async function boot() {
+  META = await (await fetch("/api/meta")).json();
+  const c = META.coverage;
+  $("coverage").textContent =
+    `${num(c.rows)} alert records · ${day(c.first)} → ${day(c.last)} · official feed`
+    + (c.duplicates_dropped ? ` · ${num(c.duplicates_dropped)} duplicate rows removed` : "");
+
+  for (const name of Object.keys(META.gazetteer)) {
+    $("oblast").append(new Option(name, name));
+  }
+  $("start").value = day(c.first);
+  $("end").value = day(c.last);
+  wire();
+  load();
+}
+
+function wire() {
+  $("oblast").onchange = () => {
+    const raions = META.gazetteer[$("oblast").value] || {};
+    fill($("raion"), Object.keys(raions), "All raions", !$("oblast").value);
+    fill($("hromada"), [], "All hromadas", true);
+    load();
+  };
+  $("raion").onchange = () => {
+    const raions = META.gazetteer[$("oblast").value] || {};
+    fill($("hromada"), raions[$("raion").value] || [], "All hromadas", !$("raion").value);
+    load();
+  };
+  for (const id of ["hromada", "start", "end", "mode", "standing"]) $(id).onchange = load;
+
+  $("presets").onclick = e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const last = new Date(META.coverage.last);
+    if (b.dataset.all) {
+      $("start").value = day(META.coverage.first);
+      $("end").value = day(META.coverage.last);
+    } else if (b.dataset.year) {
+      $("start").value = `${b.dataset.year}-01-01`;
+      $("end").value = `${+b.dataset.year + 1}-01-01`;
+    } else {
+      const from = new Date(last);
+      from.setMonth(from.getMonth() - +b.dataset.months);
+      $("start").value = from.toISOString().slice(0, 10);
+      $("end").value = day(META.coverage.last);
+    }
+    load();
+  };
+}
+
+function fill(select, values, placeholder, disabled) {
+  select.innerHTML = "";
+  select.append(new Option(placeholder, ""));
+  for (const v of values) select.append(new Option(v, v));
+  select.disabled = disabled;
+}
+
+async function load() {
+  const q = new URLSearchParams({
+    oblast: $("oblast").value, raion: $("raion").value, hromada: $("hromada").value,
+    start: $("start").value, end: $("end").value, mode: $("mode").value,
+    standing: $("standing").value,
+  });
+  $("body").innerHTML = `<div class="empty">calculating…</div>`;
+  const data = await (await fetch("/api/stats?" + q)).json();
+  if (data.error) { $("body").innerHTML = `<div class="err">${data.error}</div>`; return; }
+  render(data);
+}
+
+function render(d) {
+  const s = d.summary;
+  if (!s.finished) {
+    $("body").innerHTML = `<div class="empty">No completed alerts in this selection.</div>`;
+    return;
+  }
+
+  const merged = d.mode === "merged";
+  const area = d.area.hromada || d.area.raion || d.area.oblast || "all country";
+  // Merged episodes span a territory rather than one declared area, so they
+  // carry no place name — show the date alone in that case.
+  const when = w => {
+    const place = [w.hromada, w.raion, w.oblast].filter(Boolean)[0];
+    return place ? `${day(w.started_at)} · ${place}` : day(w.started_at);
+  };
+
+  $("body").innerHTML = `
+    <div class="cards">
+      ${card("Alerts", num(s.count), merged ? `merged from ${num(d.declarations)} declarations` : "raw declarations")}
+      ${card("Average length", hm(s.avg_min), `median ${hm(s.median_min)}`, true)}
+      ${card("Shortest", hm(s.min_min), when(s.shortest))}
+      ${card("Longest", hm(s.max_min), when(s.longest))}
+      ${card("Total time", num(Math.round(s.total_hours)) + " h", `90th pct ${hm(s.p90_min)}`)}
+    </div>
+    ${standingBlock(d.standing)}
+
+    <section>
+      <h2>Alerts per month — ${area}</h2>
+      <div class="chart">${monthChart(d.by_month)}</div>
+    </section>
+
+    <section>
+      <h2>When alerts start (hour of day, Kyiv time)</h2>
+      <div class="chart">${hourChart(d.by_hour)}</div>
+    </section>
+
+    <section>
+      <h2>Busiest ${d.area.oblast ? "raions" : "oblasts"} — by declared alerts</h2>
+      <div class="chart">${rankTable(d.ranking)}</div>
+      <div class="note">
+        ${merged
+          ? "Merged mode collapses overlapping declarations into one territory-wide episode, so an oblast-wide siren and the raion sirens inside it count once. Avoid it for the whole country — a siren is on somewhere almost always, so everything merges into a few month-long episodes."
+          : "Raw mode counts every declaration separately, including overlapping oblast- and raion-level ones. This is the right default for all-country figures."}
+        Alerts belong to a period by their start time, so none is counted twice or has its duration clipped.
+      </div>
+    </section>`;
+}
+
+function standingBlock(st) {
+  if (!st || !st.count) return "";
+  const rows = st.examples.map(e => {
+    const where = [e.hromada, e.raion, e.oblast].filter(Boolean)[0] || "–";
+    return `<tr><td>${where}</td><td class="num">${(e.duration_min / 1440).toFixed(1)} d</td>
+            <td class="num">${day(e.started_at)}</td></tr>`;
+  }).join("");
+
+  return `<section>
+    <h2>Standing alerts — excluded from the figures above</h2>
+    <div class="chart">
+      <div class="note" style="margin:0 0 10px">
+        ${num(st.count)} alert${st.count > 1 ? "s" : ""} ran for ${st.threshold_days} days or longer
+        (${num(Math.round(st.hours))} h total). These are frontline territories where the siren stays
+        declared for months — real records, but averaging them in would make “longest” and “average”
+        meaningless. Set <em>Standing alerts → Include in statistics</em> to fold them back in.
+      </div>
+      <table>
+        <tr><th>Area</th><th class="num">Duration</th><th class="num">Started</th></tr>
+        ${rows}
+      </table>
+    </div>
+  </section>`;
+}
+
+const card = (k, v, s, hi) =>
+  `<div class="card ${hi ? "hi" : ""}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+
+function monthChart(rows) {
+  if (!rows.length) return `<div class="empty">no data</div>`;
+  const w = Math.max(640, rows.length * 26), h = 200, pad = 28;
+  const max = Math.max(...rows.map(r => r.count), 1);
+  const bw = (w - pad * 2) / rows.length;
+
+  const bars = rows.map((r, i) => {
+    const bh = (r.count / max) * (h - pad * 2);
+    const x = pad + i * bw, y = h - pad - bh;
+    const label = rows.length <= 30 || i % 3 === 0
+      ? `<text x="${x + bw / 2}" y="${h - 10}" text-anchor="middle">${r.month.slice(2)}</text>` : "";
+    return `<rect x="${x + 2}" y="${y}" width="${bw - 4}" height="${bh}" fill="var(--bar)" rx="2">
+              <title>${r.month}: ${r.count} alerts, ${r.hours} h</title></rect>${label}`;
+  }).join("");
+
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <text x="4" y="${pad - 8}">${max} max</text>
+      <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="var(--line)"/>
+      ${bars}</svg>`;
+}
+
+function hourChart(hours) {
+  const w = 640, h = 150, pad = 26;
+  const max = Math.max(...hours, 1), bw = (w - pad * 2) / 24;
+  const bars = hours.map((v, i) => {
+    const bh = (v / max) * (h - pad * 2);
+    const x = pad + i * bw;
+    return `<rect x="${x + 2}" y="${h - pad - bh}" width="${bw - 4}" height="${bh}" fill="var(--accent)" rx="2">
+              <title>${String(i).padStart(2, "0")}:00 — ${v} alerts</title></rect>
+            ${i % 2 === 0 ? `<text x="${x + bw / 2}" y="${h - 9}" text-anchor="middle">${i}</text>` : ""}`;
+  }).join("");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="var(--line)"/>
+      ${bars}</svg>`;
+}
+
+function rankTable(rows) {
+  if (!rows.length) return `<div class="empty">no breakdown available</div>`;
+  return `<table>
+    <tr><th>Area</th><th class="num">Alerts</th><th class="num">Total h</th><th class="num">Average</th></tr>
+    ${rows.map(r => `<tr>
+      <td>${r.name}</td><td class="num">${num(r.count)}</td>
+      <td class="num">${num(Math.round(r.hours))}</td><td class="num">${hm(r.avg_min)}</td>
+    </tr>`).join("")}</table>`;
+}
+
+boot();
+</script>
+</body>
+</html>
