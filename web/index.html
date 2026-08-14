@@ -49,6 +49,17 @@
   h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
   h1 span { color: var(--nf-green); }
   .coverage { color: var(--muted); font-size: 12px; }
+
+  .disclaimer {
+    background: var(--nf-blush);
+    border-bottom: 1px solid var(--nf-salmon);
+    padding: 11px 24px;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .disclaimer strong { letter-spacing: .2px; }
+  .disclaimer a { color: var(--nf-dark-green); }
+
   main { padding: 20px 24px 60px; max-width: 1180px; }
 
   .filters {
@@ -156,6 +167,13 @@
   <h1>Ukraine <span>Air Alert</span> Stats</h1>
   <div class="coverage" id="coverage">loading…</div>
 </header>
+
+<div class="disclaimer" role="note">
+  <strong>Estimated figures — use as an indication, not a source of record.</strong>
+  The logic behind these statistics was written with AI and has not been fully reviewed.
+  Check anything you intend to rely on against the
+  <a href="https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset" target="_blank" rel="noopener noreferrer">source dataset</a>.
+</div>
 
 <main>
   <div class="filters">
