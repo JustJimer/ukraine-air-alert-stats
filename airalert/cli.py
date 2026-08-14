@@ -117,11 +117,15 @@ def _print_report(payload: dict, cov: dict) -> None:
             where = row["hromada"] or row["raion"] or row["oblast"] or "-"
             print(f"    {row['started_at'][:10]}  {row['duration_min'] / 1440:>6.1f} d   {where}")
 
-    if payload["ranking"]:
+    rank = payload["ranking"]
+    if rank["rows"]:
         print()
         print("  busiest areas")
-        for row in payload["ranking"][:10]:
+        for row in rank["rows"][:10]:
             print(f"    {row['count']:>6}  {row['hours']:>8.1f} h   {row['name']}")
+        if rank["shared"]:
+            print(f"  {rank['shared']} alert(s) were declared for the whole area, so they")
+            print(f"  count towards every {rank['field']} above — the rows overlap by that much.")
 
 
 def _hm(minutes: float | None) -> str:

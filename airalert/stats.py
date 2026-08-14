@@ -182,29 +182,70 @@ def by_hour(df: pd.DataFrame) -> list[int]:
     return [int(counts.get(hour, 0)) for hour in range(24)]
 
 
-def ranking(df: pd.DataFrame, field: str = "oblast", limit: int = 15) -> list[dict]:
-    """Busiest areas by alert count, with their average duration."""
+def ranking(
+    df: pd.DataFrame,
+    children: Sequence[str],
+    field: str = "oblast",
+    limit: int = 15,
+) -> dict:
+    """How many alerts covered each child area, with their average duration.
+
+    An alert declared for a whole oblast has no raion, but it still put every
+    raion in that oblast under alert. Grouping on the raion column alone drops
+    those rows, which is how an oblast showing 8,932 alerts could break down
+    into raions totalling only 5,251.
+
+    So rows with a null `field` are treated as covering every child and added
+    to each child's total. Children therefore sum to more than the parent —
+    correct, because one oblast-wide siren covers every raion at once. The
+    shared figure is reported separately so the overlap stays visible.
+    """
     if df.empty or field not in df:
-        return []
+        return {"field": field, "shared": 0, "rows": []}
 
-    grouped = df.groupby(field, dropna=True, observed=True)
-    table = pd.DataFrame(
-        {
-            "count": grouped.size(),
-            "hours": grouped["duration_min"].sum(min_count=1) / 60.0,
-            "avg_min": grouped["duration_min"].mean(),
-        }
-    ).sort_values("count", ascending=False).head(limit)
+    covers_all = df[df[field].isna()]
+    shared_count = len(covers_all)
+    shared_finished = int(covers_all["duration_min"].notna().sum())
+    shared_hours = float(covers_all["duration_min"].sum()) / 60.0 if shared_count else 0.0
 
-    return [
-        {
-            "name": str(name),
-            "count": int(row["count"]),
-            "hours": round(float(row["hours"]), 1) if pd.notna(row["hours"]) else 0.0,
-            "avg_min": round(float(row["avg_min"]), 1) if pd.notna(row["avg_min"]) else None,
-        }
-        for name, row in table.iterrows()
-    ]
+    own = df.dropna(subset=[field])
+    grouped = own.groupby(field, observed=True)
+    counts, finished = grouped.size(), grouped["duration_min"].count()
+    hours = grouped["duration_min"].sum(min_count=1) / 60.0
+
+    rows = []
+    for name in children:
+        count = int(counts.get(name, 0)) + shared_count
+        if not count:
+            continue
+        total = float(hours.get(name, 0.0) or 0.0) + shared_hours
+        done = int(finished.get(name, 0)) + shared_finished
+        rows.append(
+            {
+                "name": str(name),
+                "count": count,
+                "own": int(counts.get(name, 0)),
+                "hours": round(total, 1),
+                "avg_min": round(total * 60.0 / done, 1) if done else None,
+            }
+        )
+
+    rows.sort(key=lambda row: row["count"], reverse=True)
+    return {"field": field, "shared": shared_count, "rows": rows[:limit]}
+
+
+def children_of(df: pd.DataFrame, oblast: str | None, raion: str | None) -> list[str]:
+    """Every child area of the selection that appears anywhere in the data.
+
+    Taken from the whole dataset, not the current selection, so a raion that
+    only ever saw oblast-wide alerts still gets a row rather than vanishing.
+    """
+    if oblast is None:
+        return sorted(df["oblast"].dropna().unique())
+    scope = df[df["oblast"] == oblast]
+    if raion is None:
+        return sorted(scope["raion"].dropna().unique())
+    return sorted(scope[scope["raion"] == raion]["hromada"].dropna().unique())
 
 
 def _standing_mask(df: pd.DataFrame, standing_days: float) -> pd.Series:
@@ -275,5 +316,9 @@ def report(
         },
         "by_month": by_month(intervals),
         "by_hour": hour_distribution,
-        "ranking": ranking(declarations, "raion" if oblast else "oblast"),
+        "ranking": ranking(
+            declarations,
+            children_of(df, oblast, raion),
+            "hromada" if raion else "raion" if oblast else "oblast",
+        ),
     }

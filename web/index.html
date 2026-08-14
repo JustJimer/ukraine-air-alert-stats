@@ -609,9 +609,14 @@ function render(d, s) {
     </section>
 
     <section>
-      <h2>Busiest ${nextLevel} — by declared alerts${canDrill ? ` <em>· click a row to drill in</em>` : ""}</h2>
+      <h2>Busiest ${nextLevel} — alerts covering each${canDrill ? ` <em>· click a row to drill in</em>` : ""}</h2>
       <div class="chart">${rankTable(d.ranking, canDrill)}</div>
       <div class="note">
+        ${d.ranking.shared ? `<strong>${num(d.ranking.shared)}</strong> of these alerts were declared for the
+          whole ${d.area.raion ? "raion" : "oblast"}, so each one covered every ${nextLevel.replace(/s$/, "")}
+          and is counted in every row. <em>Own</em> shows the alerts declared for that area specifically.
+          Rows therefore add up to more than the ${d.area.raion ? "raion" : "oblast"} total — one area-wide
+          siren is a single alert but covers every ${nextLevel.replace(/s$/, "")} at once.` : ""}
         ${merged
           ? "Merged mode collapses overlapping declarations into one territory-wide episode, so an oblast-wide siren and the raion sirens inside it count once. Avoid it for the whole country — a siren is on somewhere almost always, so everything merges into a few month-long episodes."
           : "Raw mode counts every declaration separately, including overlapping oblast- and raion-level ones. This is the right default for all-country figures."}
@@ -684,12 +689,19 @@ function hourChart(hours, selectedHours) {
       <rect class="band" y="${pad}" height="${h - pad * 2}" x="0" width="0"/></svg>`;
 }
 
-function rankTable(rows, clickable) {
-  if (!rows.length) return `<div class="empty">no breakdown available</div>`;
+function rankTable(rank, clickable) {
+  if (!rank.rows.length) return `<div class="empty">no breakdown available</div>`;
+  const shared = rank.shared > 0;
+
   return `<table>
-    <thead><tr><th>Area</th><th class="num">Alerts</th><th class="num">Total h</th><th class="num">Average</th></tr></thead>
-    <tbody>${rows.map(r => `<tr class="${clickable ? "clickable" : ""}" ${clickable ? `data-area="${esc(r.name)}"` : ""}>
+    <thead><tr>
+      <th>Area</th><th class="num">Alerts</th>
+      ${shared ? `<th class="num">Own</th>` : ""}
+      <th class="num">Total h</th><th class="num">Average</th>
+    </tr></thead>
+    <tbody>${rank.rows.map(r => `<tr class="${clickable ? "clickable" : ""}" ${clickable ? `data-area="${esc(r.name)}"` : ""}>
       <td>${esc(r.name)}</td><td class="num">${num(r.count)}</td>
+      ${shared ? `<td class="num">${num(r.own)}</td>` : ""}
       <td class="num">${num(Math.round(r.hours))}</td><td class="num">${hm(r.avg_min)}</td>
     </tr>`).join("")}</tbody></table>`;
 }

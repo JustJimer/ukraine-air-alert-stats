@@ -119,6 +119,28 @@ almost always, so a year collapses into ~20 month-long episodes.
 Alerts are assigned to a period by their **start** time, so each is counted once
 and durations are never clipped.
 
+## Why the breakdown adds up to more than the parent
+
+The busiest-areas table counts, for each child area, **how many alerts covered
+it** — not how many name it. An alert declared for a whole oblast carries no
+raion, but it put every raion in that oblast under alert, so it counts towards
+each of them.
+
+Grouping on the raion column alone would drop those rows entirely. That is how
+Mykolaivska oblast could show 8,932 alerts and break down into raions totalling
+only 5,251 — the 3,681 oblast-wide alerts vanished. They are now included, and
+the *Own* column shows what each area was individually declared for:
+
+```
+8,932 oblast total  =  5,251 raion/hromada-level  +  3,681 oblast-wide
+Mykolaivskyi raion  =  1,480 own                  +  3,681 shared  =  5,161
+```
+
+Rows therefore sum to more than the parent, which is correct: one oblast-wide
+siren is a single alert that covers four raions at once. The shared figure is
+stated under the table so the overlap is never hidden. Clicking a row drills in
+and reproduces that row's number exactly, in raw mode.
+
 ## Layout
 
 ```
