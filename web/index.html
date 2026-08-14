@@ -47,14 +47,22 @@
     display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
   }
   h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
-  h1 span { color: var(--nf-green); }
+  h1 span { color: var(--nf-red); }
   .coverage { color: var(--muted); font-size: 12px; }
 
-  /* Neutral rather than alarm-coloured: this is provenance and a caveat,
-     not a warning about something being wrong. */
+  /* Pushed to the right of the header so data freshness is the last thing
+     read there, and never buried in the coverage line. */
+  .latest {
+    margin-left: auto; display: flex; align-items: baseline; gap: 7px;
+    background: var(--nf-neutral-1); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 13px; white-space: nowrap;
+  }
+  .latest .k { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  .latest .v { font-size: 13px; font-weight: 600; color: var(--nf-dark-green); font-variant-numeric: tabular-nums; }
+
   .disclaimer {
-    background: var(--nf-neutral-1);
-    border-bottom: 1px solid var(--line);
+    background: var(--nf-blush);
+    border-bottom: 1px solid var(--nf-salmon);
     padding: 11px 24px;
     font-size: 12.5px;
     line-height: 1.5;
@@ -149,6 +157,12 @@
   tbody tr.clickable { cursor: pointer; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  footer {
+    border-top: 1px solid var(--line); background: var(--panel);
+    padding: 16px 24px; color: var(--muted); font-size: 12px;
+    display: flex; gap: 14px; flex-wrap: wrap; justify-content: space-between;
+  }
+  footer a { color: var(--nf-dark-green); }
   .empty { color: var(--muted); padding: 30px; text-align: center; }
   .err { color: var(--danger); padding: 14px; }
   .standing .chart { border-left: 3px solid var(--nf-orange); }
@@ -168,10 +182,12 @@
 <header>
   <h1>Ukraine <span>Air Alert</span> Stats</h1>
   <div class="coverage" id="coverage">loading…</div>
+  <div class="latest" id="latest" hidden>
+    <span class="k">Latest alert</span><span class="v" id="latest-value"></span>
+  </div>
 </header>
 
 <div class="disclaimer" role="note">
-  <strong>Treat these figures as estimates.</strong>
   Source data comes from the
   <a href="https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset" target="_blank" rel="noopener noreferrer">ukrainian-air-raid-sirens-dataset</a>,
   and the processing behind them may contain mistakes — the
@@ -238,6 +254,11 @@
   <div id="body"><div class="empty">loading…</div></div>
 </main>
 
+<footer>
+  <span>made by <a href="https://github.com/JustJimer" target="_blank" rel="noopener noreferrer">jimergoz</a></span>
+  <span id="built"></span>
+</footer>
+
 <div id="tip"></div>
 
 <script src="stats.js"></script>
@@ -263,6 +284,14 @@ const esc = s => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replac
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = ym => { const [y, m] = ym.split("-"); return `${MONTHS[+m - 1]} ${y}`; };
 const hh = h => `${String(h).padStart(2, "0")}:00`;
+
+/* "2026-08-14 03:56" in Kyiv local time. sv-SE is used purely because its
+   date format is already ISO-shaped. */
+const kyivTime = iso => new Date(iso).toLocaleString("sv-SE", {
+  timeZone: "Europe/Kyiv",
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit",
+});
 
 /* "8,9,10,14" -> "08:00–10:59, 14:00" — drag selections are usually runs,
    and listing every hour makes the chip unreadable. */
@@ -347,6 +376,11 @@ async function boot() {
   $("coverage").textContent =
     `${num(c.rows)} alert records · ${day(c.first)} → ${day(c.last)} · official feed`
     + (c.duplicates_dropped ? ` · ${num(c.duplicates_dropped)} duplicate rows removed` : "");
+
+  // Kyiv time, matching the hour chart, so the whole page speaks one clock.
+  $("latest-value").textContent = `${kyivTime(c.last)} Kyiv`;
+  $("latest").hidden = false;
+  if (META.generated_at) $("built").textContent = `data packed ${kyivTime(META.generated_at)} Kyiv`;
 
   for (const name of Object.keys(META.gazetteer)) $("oblast").append(new Option(name, name));
 
