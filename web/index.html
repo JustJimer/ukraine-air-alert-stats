@@ -85,7 +85,6 @@
   .chip.active:hover { background: var(--nf-green); border-color: var(--nf-green); color: #fff; }
   .chip.ghost { border-style: dashed; color: var(--muted); }
   #active-filters { margin: 14px 0 0; }
-  #recents:empty { display: none; }
 
   .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); margin-top: 22px; }
   .card {
@@ -102,6 +101,12 @@
   section { margin-top: 30px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px;
        color: var(--muted); font-weight: 600; margin: 0 0 12px; }
+  .section-head {
+    display: flex; align-items: baseline; gap: 12px;
+    justify-content: space-between; flex-wrap: wrap;
+  }
+  .section-head h2 { margin-bottom: 12px; }
+  .chip.mini { padding: 3px 11px; font-size: 11px; }
   h2 em { font-style: normal; color: var(--nf-green); text-transform: none; letter-spacing: 0; }
 
   .chart { background: var(--panel); border: 1px solid var(--line);
@@ -121,6 +126,7 @@
     pointer-events: none; fill: var(--nf-reflex-green); fill-opacity: .4;
     stroke: var(--nf-dark-green); stroke-width: 1; visibility: hidden;
   }
+  svg[data-kind] { user-select: none; -webkit-user-select: none; }
   svg[data-kind].dragging { cursor: ew-resize; }
 
   table { width: 100%; border-collapse: collapse; }
@@ -205,7 +211,6 @@
     <button class="chip ghost" data-reset="1">Reset filters</button>
   </div>
 
-  <div class="chips" id="recents"></div>
   <div class="chips" id="active-filters"></div>
 
   <div id="body"><div class="empty">loading…</div></div>
@@ -216,13 +221,10 @@
 <script>
 const $ = id => document.getElementById(id);
 const STORE_LAST = "airalert.last.v1";
-const STORE_RECENT = "airalert.recent.v1";
-const RECENT_MAX = 6;
 
 let META = null;
 let HOURS = new Set();     // Kyiv hours selected on the hour chart
 let suspend = false;       // stops the cascade firing a reload mid-restore
-let firstLoad = true;      // the restored/default view is not a "recent"
 let MONTH_KEYS = [];       // month chart bar index -> "YYYY-MM"
 let drag = null;           // in-progress drag selection
 let swallowClick = false;  // a completed drag must not also fire its click
@@ -290,7 +292,7 @@ const defaultState = () => ({
   mode: "", standing: "7", hours: [],
 });
 
-/* ---------- last used / recent ---------- */
+/* ---------- last used selection ---------- */
 
 const readStore = (key, fallback) => {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
@@ -299,44 +301,6 @@ const readStore = (key, fallback) => {
 const writeStore = (key, value) => {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ }
 };
-
-function stateLabel(s) {
-  const area = s.hromada || s.raion || s.oblast || "All country";
-  const bits = [area];
-
-  const oneMonth = s.start && s.end
-    && s.start.slice(8) === "01"
-    && s.end === nextMonth(s.start.slice(0, 7));
-  if (oneMonth) bits.push(monthLabel(s.start.slice(0, 7)));
-  else if (s.start && s.end) bits.push(`${s.start} → ${s.end}`);
-
-  // Name the hours, so two recents differing only by hour stay distinguishable,
-  // but fall back to a count once the description gets unwieldy.
-  if (s.hours?.length) {
-    const described = describeHours(s.hours);
-    bits.push(described.length <= 24 ? described : `${s.hours.length} hours`);
-  }
-  if (s.mode) bits.push(s.mode);
-  return bits.join(" · ");
-}
-
-function rememberRecent(s) {
-  const key = JSON.stringify(s);
-  const recents = readStore(STORE_RECENT, []).filter(r => JSON.stringify(r) !== key);
-  recents.unshift(s);
-  writeStore(STORE_RECENT, recents.slice(0, RECENT_MAX));
-  renderRecents();
-}
-
-function renderRecents() {
-  const recents = readStore(STORE_RECENT, []);
-  const box = $("recents");
-  if (!recents.length) { box.innerHTML = ""; return; }
-
-  box.innerHTML = `<span class="lead">Recent</span>`
-    + recents.map((r, i) => `<button class="chip" data-recent="${i}">${esc(stateLabel(r))}</button>`).join("")
-    + `<button class="chip ghost" data-clear-recent="1">Clear</button>`;
-}
 
 /* ---------- boot ---------- */
 
@@ -350,7 +314,6 @@ async function boot() {
   for (const name of Object.keys(META.gazetteer)) $("oblast").append(new Option(name, name));
 
   wire();
-  renderRecents();
   applyState(readStore(STORE_LAST, null) || defaultState());
 }
 
@@ -383,14 +346,6 @@ function wire() {
     }
   };
 
-  $("recents").onclick = e => {
-    const b = e.target.closest("button");
-    if (!b) return;
-    if (b.dataset.clearRecent) { writeStore(STORE_RECENT, []); return renderRecents(); }
-    const s = readStore(STORE_RECENT, [])[+b.dataset.recent];
-    if (s) applyState(s);
-  };
-
   $("active-filters").onclick = e => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -400,9 +355,17 @@ function wire() {
   // Charts and the ranking table act as filters.
   $("body").addEventListener("click", e => {
     if (swallowClick) { swallowClick = false; return; }
+
+    const reset = e.target.closest("[data-chart-reset]");
+    if (reset) return resetChart(reset.dataset.chartReset);
+
     const bar = e.target.closest("[data-month], [data-hour]");
     if (bar?.dataset.month) return setPeriod(`${bar.dataset.month}-01`, nextMonth(bar.dataset.month));
     if (bar?.dataset.hour) return toggleHour(+bar.dataset.hour);
+
+    // Clicking a chart anywhere off the bars clears that chart's own filter.
+    const svg = e.target.closest("svg[data-kind]");
+    if (svg) return resetChart(svg.dataset.kind);
 
     const row = e.target.closest("tr[data-area]");
     if (row) return drillInto(row.dataset.area);
@@ -470,12 +433,20 @@ function wireDragSelect() {
     drag = { svg, kind: svg.dataset.kind, from: barIndexAt(svg, e.clientX), to: 0, moved: false };
     drag.to = drag.from;
     svg.classList.add("dragging");
-    svg.setPointerCapture(e.pointerId);
     paintBand();
-    e.preventDefault();          // no text/image selection while dragging
+    // Two things are deliberately avoided here. preventDefault() on pointerdown
+    // suppresses the compatibility mouse events, killing click outright; and
+    // setPointerCapture() retargets the following click to the <svg>, so a
+    // click would never resolve to the bar under the cursor. Selection and
+    // native dragging are blocked by CSS and dragstart instead, and the move
+    // and up listeners sit on window so a drag leaving the chart still tracks.
   });
 
-  body.addEventListener("pointermove", e => {
+  body.addEventListener("dragstart", e => {
+    if (e.target.closest("svg[data-kind]")) e.preventDefault();
+  });
+
+  window.addEventListener("pointermove", e => {
     if (!drag) return;
     const i = barIndexAt(drag.svg, e.clientX);
     if (i === drag.to) return;
@@ -484,8 +455,8 @@ function wireDragSelect() {
     paintBand();
   });
 
-  body.addEventListener("pointerup", () => endDrag(true));
-  body.addEventListener("pointercancel", () => endDrag(false));
+  window.addEventListener("pointerup", () => endDrag(true));
+  window.addEventListener("pointercancel", () => endDrag(false));
 }
 
 const nextMonth = ym => {
@@ -501,6 +472,18 @@ function setPeriod(start, end) {
 
 function toggleHour(hour) {
   HOURS.has(hour) ? HOURS.delete(hour) : HOURS.add(hour);
+  load();
+}
+
+/* Whether the period is narrower than the whole dataset. */
+const periodFiltered = s =>
+  s.start !== day(META.coverage.first) || s.end !== day(META.coverage.last);
+
+/* Each chart resets only its own filter, leaving the area selection alone. */
+function resetChart(kind) {
+  if (kind === "month") return setPeriod(day(META.coverage.first), day(META.coverage.last));
+  if (!HOURS.size) return;
+  HOURS.clear();
   load();
 }
 
@@ -568,8 +551,6 @@ async function load() {
   if (data.error) { $("body").innerHTML = `<div class="err">${data.error}</div>`; return; }
 
   writeStore(STORE_LAST, s);
-  if (firstLoad) firstLoad = false; else rememberRecent(s);
-
   render(data, s);
 }
 
@@ -612,12 +593,18 @@ function render(d, s) {
     ${standingBlock(d.standing)}
 
     <section>
-      <h2>Alerts per month — ${esc(area)} <em>· click a bar, or drag across bars for a date range</em></h2>
+      <div class="section-head">
+        <h2>Alerts per month — ${esc(area)} <em>· click a bar, or drag across bars for a date range</em></h2>
+        ${periodFiltered(s) ? `<button class="chip mini" data-chart-reset="month">Reset date range</button>` : ""}
+      </div>
       <div class="chart">${monthChart(d.by_month, s)}</div>
     </section>
 
     <section>
-      <h2>When alerts start (hour of day, Kyiv time) <em>· click bars, or drag across them for a time range</em></h2>
+      <div class="section-head">
+        <h2>When alerts start (hour of day, Kyiv time) <em>· click bars, or drag across them for a time range</em></h2>
+        ${s.hours.length ? `<button class="chip mini" data-chart-reset="hour">Reset time range</button>` : ""}
+      </div>
       <div class="chart">${hourChart(d.by_hour, s.hours)}</div>
     </section>
 

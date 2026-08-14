@@ -56,10 +56,13 @@ chart, a time range on the hour chart. A band follows the pointer while you
 drag. A drag that never leaves its starting bar is treated as a click, so
 single-bar behaviour is unchanged.
 
-**Filters are remembered.** The last used selection is restored on the next
-visit, and the six most recent distinct selections appear as chips under the
-presets. *Reset filters* returns to the full range for the whole country.
-Both live in `localStorage`, so nothing leaves the machine.
+**Clearing a chart filter**: each chart grows a *Reset* button while its own
+filter is active, and clicking a chart anywhere off the bars clears that
+chart's filter too. Each resets only its own dimension — the area selection
+stays put. *Reset filters*, by the presets, clears everything.
+
+**The last used selection is restored** on the next visit, held in
+`localStorage`, so nothing leaves the machine.
 
 ## Command line
 
