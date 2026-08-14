@@ -155,11 +155,15 @@ def main(argv: list[str] | None = None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     (OUT_DIR / "alerts.bin").write_bytes(buffer)
-    (OUT_DIR / "alerts.bin.gz").write_bytes(gzip.compress(buffer, 9))
     (OUT_DIR / "meta.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
 
+    # Only measured, not written: the host compresses on the fly, so a .gz
+    # beside it would be uploaded and served to nobody.
+    compressed = len(gzip.compress(buffer, 9))
+    (OUT_DIR / "alerts.bin.gz").unlink(missing_ok=True)
+
     print(f"  {meta['rows']:,} alerts, {meta['coverage']['first'][:10]} .. {meta['coverage']['last'][:10]}")
-    print(f"  {len(buffer) / 1e6:.2f} MB packed, {len(gzip.compress(buffer, 9)) / 1e6:.2f} MB gzipped")
+    print(f"  {len(buffer) / 1e6:.2f} MB packed, {compressed / 1e6:.2f} MB over the wire")
     print(f"  wrote {OUT_DIR}")
     return 0
 
