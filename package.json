@@ -1,0 +1,12 @@
+{
+  "name": "ukraine-air-alert-stats",
+  "private": true,
+  "description": "Statistics over Ukrainian air raid alerts, served as a static site.",
+  "scripts": {
+    "build": "pip install -r requirements.txt && python build.py --update && python parity.py && node check_parity.js && rm -f web/data/parity.json web/parity.html",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

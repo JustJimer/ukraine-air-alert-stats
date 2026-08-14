@@ -1,0 +1,28 @@
+name: Daily refresh
+
+# Cloudflare Workers Builds rebuilds on every push by itself, but it has no
+# schedule of its own — so this pings a Deploy Hook once a day to pull in the
+# new alerts the upstream feed has published since the last build.
+#
+# Needs one repository secret, CLOUDFLARE_DEPLOY_HOOK_URL, created under
+# Workers & Pages > the Worker > Settings > Builds > Deploy Hooks. It only
+# triggers a build of this project, so it is far less sensitive than an
+# account API token.
+on:
+  schedule:
+    - cron: "20 4 * * *"   # 04:20 UTC daily, after the upstream feed updates
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask Cloudflare to rebuild
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}" ]; then
+            echo "CLOUDFLARE_DEPLOY_HOOK_URL is not set — add it in repo settings." >&2
+            exit 1
+          fi
+          # --fail so an HTTP error fails the job instead of passing quietly.
+          curl --fail --silent --show-error -X POST "${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}"

@@ -30,23 +30,46 @@ whole dataset into a 2.8 MB binary (0.97 MB gzipped) that ships with the page,
 and `web/stats.js` does all the filtering in the browser — no API, no server,
 no cold starts. A filter takes about 3 ms.
 
-`.github/workflows/deploy.yml` rebuilds and deploys on every push to `main`,
-**daily at 04:20 UTC** so new alerts appear without anyone doing anything, and
-on demand via *Run workflow*.
-
 The target is **Workers static assets** (`wrangler.jsonc`), not Pages. There is
 no Worker script — Cloudflare simply serves `web/`. Pages would also work, but
 Cloudflare now documents Workers as the path for static sites and Pages as the
 thing to migrate away from.
 
-Deploying needs two repository secrets:
+### Setting it up
 
-- `CLOUDFLARE_API_TOKEN` — an API token with **Workers Scripts: Edit** and
-  **Account Settings: Read**
-- `CLOUDFLARE_ACCOUNT_ID`
+Connect the repository in the Cloudflare dashboard (**Workers & Pages → Create
+→ Import a repository**) and set:
 
-Nothing needs creating in the dashboard first: `wrangler deploy` creates the
-Worker on its first run.
+| Setting | Value |
+|---|---|
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+
+Both commands live in `package.json`, so what CI runs stays in version control
+rather than drifting inside the dashboard. Cloudflare's build image already has
+Python 3.13 and Node, so `npm run build` installs the Python dependencies,
+fetches the feed, packs it, runs the parity check and drops the test fixture —
+and a parity failure fails the build before anything deploys.
+
+No API token is needed: Cloudflare's GitHub App handles the connection.
+
+### Keeping the data fresh
+
+Workers Builds rebuilds on every push, but has no schedule of its own. So:
+
+1. Create a **Deploy Hook** under *Workers & Pages → the Worker → Settings →
+   Builds → Deploy Hooks*, pointed at `main`.
+2. Save its URL as the repository secret `CLOUDFLARE_DEPLOY_HOOK_URL`.
+
+`.github/workflows/daily-refresh.yml` then POSTs it at 04:20 UTC daily, and on
+demand via *Run workflow*. The hook only rebuilds this project, so it is far
+less sensitive than an account API token.
+
+*Alternative:* GitHub Actions can do the whole build and deploy itself with
+`cloudflare/wrangler-action` and `CLOUDFLARE_API_TOKEN` +
+`CLOUDFLARE_ACCOUNT_ID` secrets, instead of connecting the repo to Cloudflare.
+That keeps everything in one place but means minting a broader token. See
+`git show 1843815:.github/workflows/deploy.yml` for that version.
 
 ## Install
 
