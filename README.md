@@ -85,13 +85,12 @@ derives episodes from the transitions.
 - `worker/live.mjs` — the logic, kept separate so it runs under plain Node.
 - `worker/live.test.mjs` — 13 checks, including the Kyiv-to-UTC conversion at
   both DST offsets and the transition folding. Run them with
-  `npm run test:worker`; `npm test` covers the statistics only, and the build
-  runs both.
+  `node worker/live.test.mjs`; the build runs them too, so CI skips nothing.
 
-  They are a separate script rather than part of `npm test` so that the `test`
-  entry stays identical to the one on `main`, which has no `worker/` to run.
-  Two branches defining the same script differently is a merge conflict every
-  time the branches meet.
+  They are invoked directly rather than through an `npm` script on purpose.
+  `main` has no `worker/` to run, so any script entry defined here and not
+  there is an insertion the two branches disagree about — and package.json
+  conflicts on every merge between them.
 
 Source: [ubilling.net.ua/aerialalerts](https://wiki.ubilling.net.ua/doku.php?id=aerialalertsapi),
 no key required. It reports Kyiv local time, which is converted to UTC.
