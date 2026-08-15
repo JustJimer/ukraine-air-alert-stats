@@ -4,7 +4,8 @@
   "description": "Statistics over Ukrainian air raid alerts, served as a static site.",
   "scripts": {
     "build": "pip install -r requirements.txt && python build.py --update && python parity.py && node check_parity.js && node worker/live.test.mjs && rm -f web/data/parity.json web/parity.html",
-    "test": "python parity.py && node check_parity.js && node worker/live.test.mjs",
+    "test": "python parity.py && node check_parity.js",
+    "test:worker": "node worker/live.test.mjs",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

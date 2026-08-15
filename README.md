@@ -84,7 +84,14 @@ derives episodes from the transitions.
   assets, so the site is unchanged.
 - `worker/live.mjs` — the logic, kept separate so it runs under plain Node.
 - `worker/live.test.mjs` — 13 checks, including the Kyiv-to-UTC conversion at
-  both DST offsets and the transition folding.
+  both DST offsets and the transition folding. Run them with
+  `npm run test:worker`; `npm test` covers the statistics only, and the build
+  runs both.
+
+  They are a separate script rather than part of `npm test` so that the `test`
+  entry stays identical to the one on `main`, which has no `worker/` to run.
+  Two branches defining the same script differently is a merge conflict every
+  time the branches meet.
 
 Source: [ubilling.net.ua/aerialalerts](https://wiki.ubilling.net.ua/doku.php?id=aerialalertsapi),
 no key required. It reports Kyiv local time, which is converted to UTC.
