@@ -113,6 +113,14 @@
   #filters-panel[open] > summary::after { content: " ▴"; }
   #filters-panel > summary b { color: var(--nf-dark-green); }
 
+  /* On a wide screen the controls must be visible whether or not the `open`
+     attribute got flipped. Without this the summary is hidden by the media
+     query while the panel is still closed, and the filters become unreachable
+     — which is exactly what happens if a resize event is ever missed. */
+  @media (min-width: 761px) {
+    #filters-panel > .filters { display: grid; }
+  }
+
   @media (max-width: 760px) {
     header { padding: 12px 16px; gap: 8px; }
     .latest { margin-left: 0; }
@@ -567,6 +575,26 @@ function wire() {
   wireDragSelect();
   wireTooltip();
   wireFilterPanel();
+  wireResize();
+}
+
+/* The charts are drawn to a measured width, so they have to be redrawn when
+   that width changes. This also repairs the first paint: the initial
+   measurement can happen before layout has settled, in which case the fallback
+   width applied and the charts stayed narrower than their container for good.
+   Observing the container catches both, and a window resize besides.
+
+   The threshold is wider than a scrollbar. Re-rendering can add or remove one,
+   which changes the width by ~15px, and reacting to that would loop. */
+function wireResize() {
+  let rendered = 0, timer;
+  new ResizeObserver(entries => {
+    const width = Math.round(entries[0].contentRect.width);
+    if (!width || Math.abs(width - rendered) < 20) return;
+    rendered = width;
+    clearTimeout(timer);
+    timer = setTimeout(load, 120);
+  }).observe($("body"));
 }
 
 /* Open on wide screens, where it costs nothing, and closed on narrow ones,
@@ -853,6 +881,19 @@ function renderActiveFilters(s) {
     + `<button class="chip active" data-clear-hours="1">${esc(describeHours(s.hours))} ✕</button>`;
 }
 
+/* Width available to a chart.
+
+   clientWidth reads 0 whenever layout has not run — a background tab, or a
+   window that has not been shown yet — and a magic fallback number then drew
+   the charts narrower than their container and left them there. Falling back
+   to the viewport, clamped to main's max width, gets close enough to be right;
+   the ResizeObserver corrects it exactly once real layout happens. */
+function chartWidth() {
+  const measured = $("body").clientWidth;
+  const viewport = document.documentElement.clientWidth || 1180;
+  return Math.max(300, (measured || Math.min(1180, viewport) - 48) - 34);
+}
+
 function render(d, s) {
   const sum = d.summary;
   const merged = d.mode === "merged";
@@ -861,8 +902,7 @@ function render(d, s) {
   if (!sum.finished) {
     $("body").innerHTML = `<div class="empty">No completed alerts in this selection.</div>`
       + `<section><h2>When alerts start (hour of day, Kyiv time)</h2>
-           <div class="chart">${hourChart(d.by_hour, s.hours,
-             Math.max(300, ($("body").clientWidth || 900) - 34))}</div></section>`;
+           <div class="chart">${hourChart(d.by_hour, s.hours, chartWidth())}</div></section>`;
     return;
   }
 
@@ -874,8 +914,7 @@ function render(d, s) {
   };
   const nextLevel = !d.area.oblast ? "oblasts" : !d.area.raion ? "raions" : "hromadas";
   const canDrill = !d.area.hromada;
-  // Measured before the charts are built so they can be drawn to fit.
-  const avail = Math.max(300, ($("body").clientWidth || 900) - 34);
+  const avail = chartWidth();
 
   $("body").innerHTML = `
     <div class="cards">
