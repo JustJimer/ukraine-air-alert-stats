@@ -1,7 +1,7 @@
 {
   // Testing branch. Deliberately a different Worker name from production, so
   // deploying this can never overwrite the live site.
-  "name": "ukraine-air-alert-stats-testing",
+  "name": "ukraine-air-alert-stats-test",
   "compatibility_date": "2026-08-14",
 
   // The site is still static files; the Worker exists only to record live
