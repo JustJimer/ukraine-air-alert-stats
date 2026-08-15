@@ -294,6 +294,7 @@ def report(
     merge: bool | None = None,
     standing_days: float | None = STANDING_ALERT_DAYS,
     hours: Sequence[int] | None = None,
+    ranking_limit: int = 15,
 ) -> dict:
     """Full statistics payload for one area/period selection.
 
@@ -340,9 +341,12 @@ def report(
         },
         "by_month": by_month(intervals),
         "by_hour": hour_distribution,
+        # The table shows a top 15; the map needs every child area, so the
+        # limit is caller's choice rather than fixed here.
         "ranking": ranking(
             declarations,
             children_of(df, oblast, raion),
             "hromada" if raion else "raion" if oblast else "oblast",
+            ranking_limit,
         ),
     }

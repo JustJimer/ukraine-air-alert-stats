@@ -303,7 +303,7 @@
       });
     }
     out.sort((a, b) => b.count - a.count);
-    return { field, shared: sharedCount, rows: out.slice(0, limit || 15) };
+    return { field, shared: sharedCount, rows: out.slice(0, limit == null ? 15 : limit) };
   }
 
   /* ---------- the report the page renders ---------- */
@@ -355,10 +355,13 @@
       },
       by_month: byMonth(intervals),
       by_hour: hourDistribution,
+      // The table shows a top 15; the map needs every child area, so the
+      // limit is caller's choice rather than fixed here.
       ranking: ranking(
         declarations,
         childrenOf(oblast, raion),
         raion ? "hromada" : oblast ? "raion" : "oblast",
+        o.rankingLimit === undefined ? 15 : o.rankingLimit,
       ),
     };
   }

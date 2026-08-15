@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from airalert import data, stats
+from airalert import data, geo, stats
 
 OUT_DIR = Path(__file__).resolve().parent / "web" / "data"
 
@@ -169,8 +169,42 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"  {meta['rows']:,} alerts, {meta['coverage']['first'][:10]} .. {meta['coverage']['last'][:10]}")
     print(f"  {len(buffer) / 1e6:.2f} MB packed, {len(compressed) / 1e6:.2f} MB over the wire (gzip)")
+
+    # Boundaries for the map. Left as plain JSON rather than pre-compressed:
+    # hosts do compress application/json, which is exactly why alerts.bin
+    # needed the .gz treatment and this does not.
+    # Not tied to --update: that means "fetch today's alerts", and boundaries
+    # change on the timescale of parliamentary reform. The cache is empty on
+    # every CI build anyway, so the deployed copy is always freshly fetched.
+    print("packing boundaries ...")
+    shapes = geo.build()
+    check_geometry(shapes, meta)
+    (OUT_DIR / "geo.json").write_text(json.dumps(shapes, ensure_ascii=False), encoding="utf-8")
+    print(f"  {len(shapes['oblasts'])} oblasts, {len(shapes['raions'])} raions,"
+          f" {(OUT_DIR / 'geo.json').stat().st_size / 1e3:.0f} kB")
+
     print(f"  wrote {OUT_DIR}")
     return 0
+
+
+def check_geometry(shapes: dict, meta: dict) -> None:
+    """Fail the build if an area in the data has nowhere to be drawn.
+
+    The names are matched by transliterating the boundary file, so a rename
+    upstream shows up here as a missing shape rather than as a hole in the
+    map that nobody notices.
+    """
+    for level, key in (("oblasts", "oblasts"), ("raions", "raions")):
+        missing = [name for name in meta[level] if name not in shapes[key]]
+        if missing:
+            raise SystemExit(
+                f"no boundary for {len(missing)} {level}: {', '.join(missing[:5])}"
+                " — check airalert/geo.py RENAMED"
+            )
+
+    orphans = [name for name, shape in shapes["raions"].items() if not shape["parent"]]
+    if orphans:
+        raise SystemExit(f"raions outside every oblast: {', '.join(orphans[:5])}")
 
 
 if __name__ == "__main__":

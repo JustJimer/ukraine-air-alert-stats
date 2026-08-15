@@ -217,6 +217,51 @@
   svg[data-kind] { user-select: none; -webkit-user-select: none; }
   svg[data-kind].dragging { cursor: ew-resize; }
 
+  /* ---- map ---- */
+  /* Six steps of the additional palette, light to dark. A sequential ramp
+     rather than green-to-red: this shows one quantity, and light-to-dark
+     survives colourblindness and greyscale printing, which green-to-red
+     does not. */
+  .map {
+    --m0: #fce8e2; --m1: #f9cbbc; --m2: #f9b4a0;
+    --m3: #ff8b7c; --m4: #ff665b; --m5: #c62d1f;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px;
+  }
+  /* height:auto lets the viewBox set the aspect, so the panel is exactly as
+     tall as the area drawn — a fixed height letterboxed the country into a
+     third of the panel on a phone. The cap keeps a tall oblast from filling
+     more than a screen, and xMidYMid meet centres whatever is left over. */
+  .map svg {
+    width: 100%; height: auto; max-height: 62vh;
+    user-select: none; -webkit-user-select: none;
+  }
+  .map path {
+    stroke: var(--panel); stroke-width: .5; stroke-linejoin: round;
+    transition: fill .12s;
+  }
+  .map path.pick { cursor: pointer; }
+  .map path.pick:hover, .map path.pick:focus-visible { fill: var(--nf-super-dark-green); }
+  .map path.pick:focus-visible {
+    outline: none; stroke: var(--nf-super-dark-green); stroke-width: 2; stroke-dasharray: 3 2;
+  }
+  .map path.blank { fill: var(--nf-neutral-1); }
+  .map path.sel { stroke: var(--nf-super-dark-green); stroke-width: 2; }
+  /* Context outline of the oblast being drilled into, and never a click target. */
+  .map path.edge { fill: none; stroke: var(--nf-dark-green); stroke-width: 1.2; pointer-events: none; }
+  .map text.lbl {
+    fill: var(--ink); text-anchor: middle; pointer-events: none;
+    paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round;
+  }
+  .legend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px;
+            color: var(--muted); font-size: 11px; }
+  .legend .scale { display: flex; }
+  .legend .scale span { width: 30px; height: 11px; }
+  .legend .scale span:first-child { border-radius: 3px 0 0 3px; }
+  .legend .scale span:last-child { border-radius: 0 3px 3px 0; }
+  .legend .none { width: 11px; height: 11px; border-radius: 3px; background: var(--nf-neutral-1);
+                  border: 1px solid var(--line); }
+
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
   th { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; }
@@ -326,6 +371,9 @@
 
 <footer>
   <span>made by <a href="https://github.com/JustJimer" target="_blank" rel="noopener noreferrer">jimergoz</a></span>
+  <!-- Filled from the boundary pack, which carries its own attribution, so the
+       credit follows the data rather than being retyped here. CC BY requires it. -->
+  <span id="geo-credit" hidden></span>
   <span id="built"></span>
 </footer>
 
@@ -340,6 +388,7 @@ const $ = id => document.getElementById(id);
 const STORE_LAST = "airalert.last.v2";
 
 let META = null;
+let GEO = null;            // boundary shapes; null if they failed to load
 let HOURS = new Set();     // Kyiv hours selected on the hour chart
 let suspend = false;       // stops the cascade firing a reload mid-restore
 let MONTH_KEYS = [];       // month chart bar index -> "YYYY-MM"
@@ -516,6 +565,22 @@ async function boot() {
 
   for (const name of Object.keys(META.gazetteer)) $("oblast").append(new Option(name, name));
 
+  // The map is an extra, not the point of the page, so it is fetched apart
+  // from the figures and a failure costs the map rather than the whole view.
+  fetch("data/geo.json")
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then(shapes => {
+      GEO = shapes;
+      const credit = GEO.attribution;
+      if (credit) {
+        $("geo-credit").innerHTML = `boundaries from <a href="${esc(credit.url)}"
+          target="_blank" rel="noopener noreferrer">${esc(credit.name)}</a> · ${esc(credit.licence)}`;
+        $("geo-credit").hidden = false;
+      }
+      load();
+    })
+    .catch(() => { /* no map, everything else stands */ });
+
   wire();
   // A shared link wins over whatever this browser was last looking at.
   applyState(stateFromQuery() || readStore(STORE_LAST, null) || defaultState());
@@ -568,9 +633,16 @@ function wire() {
     if (bar?.dataset.month) return setPeriod(`${bar.dataset.month}-01`, lastDayOfMonth(bar.dataset.month));
     if (bar?.dataset.hour) return toggleHour(+bar.dataset.hour);
 
+    const shape = e.target.closest("[data-map-area]");
+    if (shape) return pickArea(shape.dataset.mapArea);
+
     // Clicking a chart anywhere off the bars clears that chart's own filter.
+    // The map carries no data-kind of its own, because the drag-to-select
+    // handler binds to every svg[data-kind] and would try to read bar
+    // geometry that a map does not have.
     const svg = e.target.closest("svg[data-kind]");
     if (svg) return resetChart(svg.dataset.kind);
+    if (e.target.closest("svg[data-map]")) return resetChart("map");
 
     const row = e.target.closest("tr[data-area]");
     if (row) return drillInto(row.dataset.area);
@@ -636,7 +708,10 @@ function wireKeyboard() {
       return drillInto(row.dataset.area);
     }
 
-    const bar = e.target.closest?.("rect.hit");
+    // .hit rather than rect.hit: the map's shapes are paths and take the same
+    // roving treatment, since 27 oblasts as individual tab stops would be as
+    // bad as 54 months.
+    const bar = e.target.closest?.(".hit[tabindex]");
     if (!bar) return;
 
     if (e.key === "Enter" || e.key === " ") {
@@ -649,7 +724,7 @@ function wireKeyboard() {
     if (step === undefined) return;
     e.preventDefault();
 
-    const bars = [...bar.ownerSVGElement.querySelectorAll("rect.hit")];
+    const bars = [...bar.ownerSVGElement.querySelectorAll(".hit[tabindex]")];
     const here = bars.indexOf(bar);
     const next = bars[Math.max(0, Math.min(bars.length - 1,
       step === -Infinity ? 0 : step === Infinity ? bars.length - 1 : here + step))];
@@ -834,8 +909,28 @@ function comparePrevious(current, s) {
 /* Each chart resets only its own filter, leaving the area selection alone. */
 function resetChart(kind) {
   if (kind === "month") return setPeriod(day(META.coverage.first), day(META.coverage.last));
+  if (kind === "map") {
+    const s = readState();
+    if (!s.oblast) return;
+    return applyState({ ...s, oblast: "", raion: "", hromada: "" });
+  }
   if (!HOURS.size) return;
   HOURS.clear();
+  load();
+}
+
+/* Clicking the map. At country level that is a drill from nothing into an
+   oblast, which is what the table's row click does. Below that it is a move
+   between raions of the same oblast, which is not — drilling would try to
+   read the clicked raion as a hromada. */
+function pickArea(name) {
+  if (!$("oblast").value) return drillInto(name);
+  if ($("raion").value === name) return;
+
+  suspend = true;
+  $("raion").value = name;
+  fill($("hromada"), (META.gazetteer[$("oblast").value] || {})[name] || [], "All hromadas", false);
+  suspend = false;
   load();
 }
 
@@ -914,6 +1009,9 @@ function load() {
       merge: s.mode === "merged" ? true : s.mode === "raw" ? false : null,
       standingDays: s.standing === "off" ? null : Number(s.standing),
       hours: s.hours,
+      // Every child area, because the map colours all of them. The table
+      // takes its own top slice from the same rows, so the two always agree.
+      rankingLimit: Infinity,
     });
   } catch (error) {
     $("body").innerHTML = `<div class="err">${esc(error.message)}</div>`;
@@ -1004,6 +1102,8 @@ function render(d, s) {
       <div class="chart">${hourChart(d.by_hour, s.hours, avail)}</div>
     </section>
 
+    ${mapPanel(d, s)}
+
     <section>
       <h2>Busiest ${nextLevel} — alerts covering each${canDrill ? ` <em>· click a row to drill in</em>` : ""}</h2>
       <div class="chart">${rankTable(d.ranking, canDrill)}</div>
@@ -1020,6 +1120,8 @@ function render(d, s) {
         ${s.hours.length ? "The hour chart keeps showing the full distribution, so you can still see what the hour filter selects against." : ""}
       </div>
     </section>`;
+
+  trimMapLabels();
 }
 
 const card = (k, v, s, hi, delta) =>
@@ -1107,9 +1209,191 @@ function hourChart(hours, selectedHours, avail) {
       <rect class="band" y="${pad}" height="${h - pad * 2}" x="0" width="0"/></svg>`;
 }
 
+/* ---------- the map ---------- */
+
+/* Steps are quantiles over the areas that have data, not a linear scale.
+   Alert counts are wildly skewed — the busiest oblast has had more than
+   twenty times the quietest — so a linear ramp paints two areas dark and
+   everything else the palest step, which says nothing. Quantiles spread the
+   areas across the steps, and the legend states the real range of each. */
+const MAP_STEPS = 6;
+
+function mapScale(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const cuts = [];
+  for (let i = 1; i < MAP_STEPS; i++) {
+    const cut = sorted[Math.floor((i * sorted.length) / MAP_STEPS)];
+    // Ties collapse steps. Keeping duplicates would label two swatches with
+    // the same range, so drop them and let the ramp be shorter than six.
+    if (cut !== undefined && cut !== cuts[cuts.length - 1]) cuts.push(cut);
+  }
+  return cuts;
+}
+
+const stepOf = (value, cuts) => {
+  let i = 0;
+  while (i < cuts.length && value >= cuts[i]) i++;
+  return i;
+};
+
+/* Grow a bounding box so a drilled-in oblast is not flush against the edge. */
+const padBox = ([x, y, w, h], by) => [x - w * by, y - h * by, w * (1 + by * 2), h * (1 + by * 2)];
+
+function mapPanel(d, s) {
+  if (!GEO) return "";
+
+  // Kyiv City is an oblast-level area with no raions beneath it, so drilling
+  // into it leaves nothing to draw. Fall back to the area's own outline
+  // rather than dropping the map, which would strand its heading and its
+  // reset button.
+  const drilled = s.oblast && (GEO.raionsOf[s.oblast] || []).length;
+  const level = drilled ? "raion" : "oblast";
+  const shapes = level === "oblast" ? GEO.oblasts : GEO.raions;
+  const names = drilled ? GEO.raionsOf[s.oblast]
+    : s.oblast ? [s.oblast].filter(n => GEO.oblasts[n])
+    : Object.keys(GEO.oblasts);
+  if (!names.length) return "";
+
+  // Numbers come from the same ranking the table below is built from, so the
+  // map and the table can never disagree. Once a raion is picked the ranking
+  // is about hromadas, which have no boundaries here — the map stays on the
+  // oblast's raions as a locator, marking the one selected, rather than
+  // colouring itself from figures that are about something else.
+  const colouring = d.ranking.field === level;
+  const rows = new Map(colouring ? d.ranking.rows.map(r => [r.name, r]) : []);
+
+  // Only areas the data actually knows about can be filtered to. An oblast
+  // that has never had a raion-level siren still has raions on the map, and
+  // selecting one would set a value the dropdown does not have. The fallback
+  // view offers nothing: its one shape is the area already selected.
+  const selectable = new Set(
+    drilled ? Object.keys(META.gazetteer[s.oblast] || {})
+      : s.oblast ? []
+      : Object.keys(META.gazetteer)
+  );
+
+  const cuts = mapScale([...rows.values()].map(r => r.count));
+  const box = s.oblast && GEO.oblasts[s.oblast]
+    ? padBox(GEO.oblasts[s.oblast].box, 0.05) : GEO.viewBox;
+  const selected = drilled ? s.raion : s.oblast;
+
+  let firstStop = true;
+  const paths = names.map(name => {
+    const shape = shapes[name];
+    if (!shape) return "";
+
+    const row = rows.get(name);
+    const pick = selectable.has(name);
+    const fill = row ? `var(--m${stepOf(row.count, cuts)})` : "";
+
+    const tip = row
+      ? `${name}<br><b>${num(row.count)}</b> alerts<br><b>${num(Math.round(row.hours))}</b> h total`
+        + (row.avg_min != null ? `<br>average <b>${hm(row.avg_min)}</b>` : "")
+        + (pick ? `<br><span class="hint">click to filter</span>` : "")
+      : `${name}<br>${colouring ? "no alerts in this selection" : "no separate figures"}`;
+
+    const roving = pick ? `role="button" tabindex="${firstStop ? 0 : -1}"
+        aria-label="${esc(`${name}${row ? `, ${row.count} alerts` : ""}`)}"` : "";
+    if (pick) firstStop = false;
+
+    return `<path class="hit ${pick ? "pick" : ""} ${row ? "" : "blank"} ${name === selected ? "sel" : ""}"
+      d="${shape.d}" ${fill ? `fill="${fill}"` : ""} data-tip="${esc(tip)}"
+      ${pick ? `data-map-area="${esc(name)}"` : ""} ${roving}/>`;
+  }).join("");
+
+  // Names only where they fit — 25 oblasts at country scale is a thicket, a
+  // handful of raions inside one oblast is readable. Which of them survive is
+  // decided after layout by trimMapLabels, which can measure the text; the
+  // largest areas are emitted first so they are the ones that keep their name
+  // when two labels collide.
+  const size = box[2] / 34;
+  const labels = names.length <= 12
+    ? names
+        .filter(name => shapes[name])
+        .sort((a, b) => shapes[b].box[2] * shapes[b].box[3] - shapes[a].box[2] * shapes[a].box[3])
+        .map(name => `<text class="lbl" x="${shapes[name].c[0]}" y="${shapes[name].c[1]}"
+            font-size="${size.toFixed(2)}">${esc(name.replace(/\s+(raion|oblast)$/i, ""))}</text>`)
+        .join("")
+    : "";
+
+  const outline = drilled && GEO.oblasts[s.oblast]
+    ? `<path class="edge" d="${GEO.oblasts[s.oblast].d}"/>` : "";
+
+  // Luhanska oblast has raions on the map but has never had a raion-level
+  // siren, so none of them can be selected — do not invite a click that will
+  // not happen.
+  const title = s.oblast ? `${esc(s.oblast)} by ${drilled ? "raion" : "area"}` : "Alerts by oblast";
+
+  return `<section>
+    <div class="section-head">
+      <h2>${title}${selectable.size ? ` <em>· click an area to filter</em>` : ""}</h2>
+      ${s.oblast ? `<button class="chip mini" data-chart-reset="map">Reset area</button>` : ""}
+    </div>
+    <div class="map">
+      <svg data-map viewBox="${box.map(v => v.toFixed(1)).join(" ")}"
+           role="img" aria-label="${esc(`Alerts by ${level}`)}">
+        ${paths}${outline}${labels}
+      </svg>
+      ${mapLegend(cuts, [...rows.values()], colouring)}
+    </div>
+  </section>`;
+}
+
+/* Drop any label that lands on one already placed. Guessing from the shape's
+   bounding box does not work — neighbouring raions are wide enough for their
+   names and still have centroids close enough that the text collides — so
+   this measures what was actually drawn and keeps the first of each clash.
+   Emission order puts the largest areas first, so they win. */
+function trimMapLabels() {
+  const svg = $("body").querySelector("svg[data-map]");
+  if (!svg) return;
+
+  const kept = [];
+  for (const label of [...svg.querySelectorAll("text.lbl")]) {
+    const box = label.getBoundingClientRect();
+    if (!box.width) return;   // not laid out yet; leave every label alone
+    const clashes = kept.some(k =>
+      k.left < box.right && box.left < k.right && k.top < box.bottom && box.top < k.bottom);
+    if (clashes) label.remove();
+    else kept.push(box);
+  }
+}
+
+/* Ranges are read back off the buckets rather than off the cut points, so a
+   swatch always states the counts actually painted in it. */
+function mapLegend(cuts, rows, colouring) {
+  if (!colouring || !rows.length) {
+    return `<div class="legend"><span class="none"></span> no separate figures for these areas</div>`;
+  }
+
+  const buckets = [];
+  for (const row of rows) {
+    const i = stepOf(row.count, cuts);
+    (buckets[i] ||= []).push(row.count);
+  }
+
+  const swatches = buckets.map((counts, i) => {
+    if (!counts) return "";
+    const low = Math.min(...counts), high = Math.max(...counts);
+    const range = low === high ? num(low) : `${num(low)}–${num(high)}`;
+    return `<span style="background: var(--m${i})" title="${esc(`${range} alerts`)}"></span>`;
+  }).join("");
+
+  const all = rows.map(r => r.count);
+  return `<div class="legend">
+    <span>${num(Math.min(...all))}</span>
+    <span class="scale">${swatches}</span>
+    <span>${num(Math.max(...all))} alerts</span>
+    <span class="none" style="margin-left:8px"></span><span>none</span>
+  </div>`;
+}
+
+const RANK_ROWS = 15;
+
 function rankTable(rank, clickable) {
   if (!rank.rows.length) return `<div class="empty">no breakdown available</div>`;
   const shared = rank.shared > 0;
+  const rows = rank.rows.slice(0, RANK_ROWS);
 
   return `<table>
     <thead><tr>
@@ -1117,7 +1401,7 @@ function rankTable(rank, clickable) {
       ${shared ? `<th class="num">Own</th>` : ""}
       <th class="num drop-narrow">Total h</th><th class="num">Average</th>
     </tr></thead>
-    <tbody>${rank.rows.map(r => `<tr class="${clickable ? "clickable" : ""}"
+    <tbody>${rows.map(r => `<tr class="${clickable ? "clickable" : ""}"
       ${clickable ? `data-area="${esc(r.name)}" tabindex="0" role="button" aria-label="Drill into ${esc(r.name)}"` : ""}>
       <td>${esc(r.name)}</td><td class="num">${num(r.count)}</td>
       ${shared ? `<td class="num">${num(r.own)}</td>` : ""}
