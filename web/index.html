@@ -173,6 +173,11 @@
   .card .k { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
   .card .v { font-size: 25px; font-weight: 600; margin-top: 5px; color: var(--nf-dark-green); }
   .card .s { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .card .delta { font-size: 11px; margin-top: 6px; font-weight: 600; }
+  .card .delta span { font-weight: 400; color: var(--muted); }
+  .card .delta.up { color: var(--nf-red-text); }
+  .card .delta.down { color: var(--nf-dark-green); }
+  .card .delta.flat { color: var(--muted); font-weight: 400; }
   .card.hi { border-left-color: var(--nf-green); }
   .card.hi .v { color: var(--nf-green); }
 
@@ -773,6 +778,59 @@ function toggleHour(hour) {
 const periodFiltered = s =>
   s.start !== day(META.coverage.first) || s.end !== day(META.coverage.last);
 
+/* ---------- comparison with the period before ---------- */
+
+/* The window immediately before the selected one, matched to how the selection
+   was expressed. A calendar month belongs against the previous calendar month,
+   not against the previous 31 days, or February and March would never compare
+   like for like. */
+function previousWindow(s) {
+  const month = s.start.slice(0, 7);
+  if (s.start === `${month}-01` && s.end === lastDayOfMonth(month)) {
+    const [y, m] = month.split("-").map(Number);
+    const before = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+    return { start: `${before}-01`, end: lastDayOfMonth(before), label: "previous month" };
+  }
+
+  const year = s.start.slice(0, 4);
+  if (s.start === `${year}-01-01` && s.end === `${year}-12-31`) {
+    return { start: `${+year - 1}-01-01`, end: `${+year - 1}-12-31`, label: "previous year" };
+  }
+
+  const days = Math.round((Date.parse(s.end) - Date.parse(s.start)) / 86400000) + 1;
+  return { start: addDays(s.start, -days), end: addDays(s.start, -1), label: `previous ${days} days` };
+}
+
+/* Percentage change against that window, or null when the question does not
+   arise: nothing precedes "all time", and a window the dataset only partly
+   covers would read as a collapse in alerts rather than missing history. */
+function comparePrevious(current, s) {
+  if (!periodFiltered(s)) return null;
+
+  const prev = previousWindow(s);
+  if (prev.start < day(META.coverage.first)) return null;
+
+  const before = AlertStats.report({
+    oblast: s.oblast, raion: s.raion, hromada: s.hromada,
+    start: prev.start, end: addDays(prev.end, 1),
+    merge: s.mode === "merged" ? true : s.mode === "raw" ? false : null,
+    standingDays: s.standing === "off" ? null : Number(s.standing),
+    hours: s.hours,
+  }).summary;
+
+  const change = (now, was) =>
+    was == null || was === 0 || now == null ? null : ((now - was) / was) * 100;
+
+  return {
+    label: prev.label,
+    range: `${prev.start} → ${prev.end}`,
+    count: change(current.count, before.count),
+    avg_min: change(current.avg_min, before.avg_min),
+    total_hours: change(current.total_hours, before.total_hours),
+    had: before.count,
+  };
+}
+
 /* Each chart resets only its own filter, leaving the area selection alone. */
 function resetChart(kind) {
   if (kind === "month") return setPeriod(day(META.coverage.first), day(META.coverage.last));
@@ -915,14 +973,18 @@ function render(d, s) {
   const nextLevel = !d.area.oblast ? "oblasts" : !d.area.raion ? "raions" : "hromadas";
   const canDrill = !d.area.hromada;
   const avail = chartWidth();
+  const vs = comparePrevious(sum, s);
 
   $("body").innerHTML = `
     <div class="cards">
-      ${card("Alerts", num(sum.count), merged ? `merged from ${num(d.declarations)} declarations` : "raw declarations")}
-      ${card("Average length", hm(sum.avg_min), `median ${hm(sum.median_min)}`, true)}
+      ${card("Alerts", num(sum.count), merged ? `merged from ${num(d.declarations)} declarations` : "raw declarations",
+             false, vs && { pct: vs.count, label: vs.label })}
+      ${card("Average length", hm(sum.avg_min), `median ${hm(sum.median_min)}`, true,
+             vs && { pct: vs.avg_min, label: vs.label })}
       ${card("Shortest", hm(sum.min_min), when(sum.shortest))}
       ${card("Longest", hm(sum.max_min), when(sum.longest))}
-      ${card("Total time", num(Math.round(sum.total_hours)) + " h", `90th pct ${hm(sum.p90_min)}`)}
+      ${card("Total time", num(Math.round(sum.total_hours)) + " h", `90th pct ${hm(sum.p90_min)}`,
+             false, vs && { pct: vs.total_hours, label: vs.label })}
     </div>
     ${standingBlock(d.standing, area)}
 
@@ -960,8 +1022,20 @@ function render(d, s) {
     </section>`;
 }
 
-const card = (k, v, s, hi) =>
-  `<div class="card ${hi ? "hi" : ""}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+const card = (k, v, s, hi, delta) =>
+  `<div class="card ${hi ? "hi" : ""}"><div class="k">${k}</div><div class="v">${v}</div>
+   <div class="s">${s}</div>${deltaLine(delta)}</div>`;
+
+/* Up is red and down is green because every figure here counts something
+   unwelcome: more alerts, longer alerts, more hours under one. */
+function deltaLine(d) {
+  if (!d || d.pct == null) return "";
+  const rounded = Math.abs(d.pct) < 0.5 ? 0 : Math.round(d.pct);
+  if (rounded === 0) return `<div class="delta flat">no change vs ${esc(d.label)}</div>`;
+  const up = rounded > 0;
+  return `<div class="delta ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(rounded)}%`
+       + ` <span>vs ${esc(d.label)}</span></div>`;
+}
 
 function monthChart(rows, state, avail) {
   if (!rows.length) return `<div class="empty">no data</div>`;
