@@ -26,10 +26,28 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Ask Cloudflare to rebuild
+        # Passed through the environment rather than interpolated into the
+        # script: `${{ secrets.X }}` is pasted in as literal text before bash
+        # sees it, so the value's own characters become part of the command.
+        env:
+          HOOK_URL: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}
         run: |
-          if [ -z "${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}" ]; then
-            echo "CLOUDFLARE_DEPLOY_HOOK_URL is not set — add it in repo settings." >&2
+          # A secret can exist by name and still hold an empty value — which is
+          # what happens if `gh secret set` reads an stdin that is already at
+          # EOF. Report the length so that case is obvious; GitHub masks the
+          # value itself, and a length alone gives nothing away.
+          echo "secret length: ${#HOOK_URL}"
+
+          if [ -z "$HOOK_URL" ]; then
+            echo "CLOUDFLARE_DEPLOY_HOOK_URL is empty or unset." >&2
+            echo "Set it at Settings > Secrets and variables > Actions." >&2
             exit 1
           fi
-          # --fail so an HTTP error fails the job instead of passing quietly.
-          curl --fail --silent --show-error -X POST "${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}"
+
+          # --fail turns an HTTP error into a failed job instead of a silent
+          # success; -o writes the body somewhere we can print deliberately.
+          status=$(curl --silent --show-error -o /tmp/hook.out -w "%{http_code}" \
+                        -X POST "$HOOK_URL")
+          echo "Cloudflare responded $status"
+          cat /tmp/hook.out
+          [ "$status" -ge 200 ] && [ "$status" -lt 300 ]
