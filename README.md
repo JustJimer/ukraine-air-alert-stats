@@ -14,9 +14,9 @@ No logger was needed — a complete, free, daily-updated historical dataset alre
 ## Built with Claude
 
 Built largely with Claude — the AI generated most of the code and commits, while
-the human role was setting direction, reviewing results, and handling
-infrastructure and security-related tasks. The result is a real, deployed
-application that updates itself daily.
+my role was setting direction, reviewing results, and handling infrastructure
+and security-related tasks. The result is a real, deployed application that
+updates itself daily.
 
 ## Data source
 
