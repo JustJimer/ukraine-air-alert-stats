@@ -38,9 +38,15 @@ Add them in `data.py` if you ever need live polling.
 ## How it is hosted
 
 The site is **static**. `build.py` fetches the CSV, dedupes it and packs the
-whole dataset into a 2.8 MB binary (0.97 MB gzipped) that ships with the page,
-and `web/stats.js` does all the filtering in the browser — no API, no server,
-no cold starts. A filter takes about 3 ms.
+whole dataset into a 2.8 MB binary that ships with the page, and `web/stats.js`
+does all the filtering in the browser — no API, no server, no cold starts. A
+filter takes about 3 ms.
+
+The build writes `alerts.bin.gz` beside it and the page asks for that first,
+inflating it with `DecompressionStream`. Hosts compress text responses but leave
+`application/octet-stream` alone — `meta.json` comes back brotli-encoded while
+`alerts.bin` does not — so serving it pre-compressed takes the download from
+2.85 MB to 0.97 MB. The plain file stays as the fallback.
 
 The target is **Workers static assets** (`wrangler.jsonc`), not Pages. There is
 no Worker script — Cloudflare simply serves `web/`. Pages would also work, but
@@ -140,7 +146,19 @@ chart's filter too. Each resets only its own dimension — the area selection
 stays put. *Reset filters*, by the presets, clears everything.
 
 **The last used selection is restored** on the next visit, held in
-`localStorage`, so nothing leaves the machine.
+`localStorage`, so nothing leaves the machine. **The view is also in the URL**,
+so any filtered view can be linked or bookmarked and the browser's Back button
+steps through your filters. A shared link wins over the stored selection.
+
+**Keyboard**: charts use a roving tabindex — one tab stop per chart, then arrow
+keys between bars, Home and End for the ends, Enter or Space to select. Rows in
+the busiest-areas table are focusable and drill in on Enter. Previously the
+charts and the drill-down carried the entire interaction and none of it could be
+reached without a mouse.
+
+On narrow screens the filters collapse into a summary line showing the current
+selection, the charts are drawn to fit their container rather than scrolling,
+and the least load-bearing table column is dropped.
 
 ## Command line
 

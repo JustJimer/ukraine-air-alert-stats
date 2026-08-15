@@ -157,13 +157,18 @@ def main(argv: list[str] | None = None) -> int:
     (OUT_DIR / "alerts.bin").write_bytes(buffer)
     (OUT_DIR / "meta.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
 
-    # Only measured, not written: the host compresses on the fly, so a .gz
-    # beside it would be uploaded and served to nobody.
-    compressed = len(gzip.compress(buffer, 9))
-    (OUT_DIR / "alerts.bin.gz").unlink(missing_ok=True)
+    # Both are written, and the page asks for the .gz first.
+    #
+    # Cloudflare compresses text responses but leaves application/octet-stream
+    # alone, so the raw file goes over the wire at full size — meta.json comes
+    # back brotli-encoded while alerts.bin does not. Serving a pre-compressed
+    # copy and inflating it with DecompressionStream cuts the download to a
+    # third. alerts.bin stays for browsers without that API.
+    compressed = gzip.compress(buffer, 9)
+    (OUT_DIR / "alerts.bin.gz").write_bytes(compressed)
 
     print(f"  {meta['rows']:,} alerts, {meta['coverage']['first'][:10]} .. {meta['coverage']['last'][:10]}")
-    print(f"  {len(buffer) / 1e6:.2f} MB packed, {compressed / 1e6:.2f} MB over the wire")
+    print(f"  {len(buffer) / 1e6:.2f} MB packed, {len(compressed) / 1e6:.2f} MB over the wire (gzip)")
     print(f"  wrote {OUT_DIR}")
     return 0
 
