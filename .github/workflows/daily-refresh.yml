@@ -10,7 +10,14 @@ name: Daily refresh
 # account API token.
 on:
   schedule:
-    - cron: "20 4 * * *"   # 04:20 UTC daily, after the upstream feed updates
+    # 04:00 UTC = 07:00 Kyiv in summer, an hour after the upstream feed lands.
+    # Its commits arrive between 01:23 and 03:19 UTC (04:23–06:19 Kyiv) across
+    # the last fortnight, so this clears the latest of them by ~40 minutes.
+    #
+    # Cron is UTC only, so in winter this reads 06:00 Kyiv. That is still after
+    # the feed, which runs on its own UTC schedule and does not shift — only
+    # the wall-clock label moves, not the ordering.
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 jobs:

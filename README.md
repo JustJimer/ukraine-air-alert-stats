@@ -66,9 +66,15 @@ Workers Builds rebuilds on every push, but has no schedule of its own. So:
    Builds → Deploy Hooks*, pointed at `main`.
 2. Save its URL as the repository secret `CLOUDFLARE_DEPLOY_HOOK_URL`.
 
-`.github/workflows/daily-refresh.yml` then POSTs it at 04:20 UTC daily, and on
-demand via *Run workflow*. The hook only rebuilds this project, so it is far
-less sensitive than an account API token.
+`.github/workflows/daily-refresh.yml` then POSTs it at **04:00 UTC — 07:00
+Kyiv** daily, and on demand via *Run workflow*. The hook only rebuilds this
+project, so it is far less sensitive than an account API token.
+
+That hour is picked from the upstream feed's own behaviour: its commits land
+between 01:23 and 03:19 UTC, so 04:00 clears the latest by about 40 minutes.
+GitHub's scheduler is best-effort and often runs a few minutes late, which only
+widens that gap. Cron is UTC only, so the run reads 06:00 Kyiv in winter — still
+after the feed, which keeps its own UTC schedule.
 
 *Alternative:* GitHub Actions can do the whole build and deploy itself with
 `cloudflare/wrangler-action` and `CLOUDFLARE_API_TOKEN` +
