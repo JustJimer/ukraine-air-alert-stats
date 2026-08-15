@@ -530,7 +530,7 @@ function wire() {
     if (b.dataset.all) {
       setPeriod(day(META.coverage.first), day(META.coverage.last));
     } else if (b.dataset.year) {
-      setPeriod(`${b.dataset.year}-01-01`, `${+b.dataset.year + 1}-01-01`);
+      setPeriod(`${b.dataset.year}-01-01`, `${b.dataset.year}-12-31`);
     } else {
       const from = new Date(META.coverage.last);
       from.setMonth(from.getMonth() - +b.dataset.months);
@@ -552,7 +552,7 @@ function wire() {
     if (reset) return resetChart(reset.dataset.chartReset);
 
     const bar = e.target.closest("[data-month], [data-hour]");
-    if (bar?.dataset.month) return setPeriod(`${bar.dataset.month}-01`, nextMonth(bar.dataset.month));
+    if (bar?.dataset.month) return setPeriod(`${bar.dataset.month}-01`, lastDayOfMonth(bar.dataset.month));
     if (bar?.dataset.hour) return toggleHour(+bar.dataset.hour);
 
     // Clicking a chart anywhere off the bars clears that chart's own filter.
@@ -670,7 +670,7 @@ function endDrag(apply) {
   setTimeout(() => { swallowClick = false; }, 0);
 
   const a = Math.min(from, to), b = Math.max(from, to);
-  if (kind === "month") setPeriod(`${MONTH_KEYS[a]}-01`, nextMonth(MONTH_KEYS[b]));
+  if (kind === "month") setPeriod(`${MONTH_KEYS[a]}-01`, lastDayOfMonth(MONTH_KEYS[b]));
   else { HOURS = new Set(Array.from({ length: b - a + 1 }, (_, i) => a + i)); load(); }
 }
 
@@ -717,6 +717,18 @@ const nextMonth = ym => {
   const [y, m] = ym.split("-").map(Number);
   return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
 };
+
+const addDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/* "To" is inclusive of the day shown, which is what a field labelled To
+   implies. The statistics take an exclusive upper bound, so the day is added
+   back on at the point of the query — see load(). Getting this wrong dropped
+   every alert on the most recent day, so "all time" quietly was not. */
+const lastDayOfMonth = ym => addDays(nextMonth(ym), -1);
 
 function setPeriod(start, end) {
   $("start").value = start;
@@ -812,7 +824,7 @@ function load() {
   try {
     data = AlertStats.report({
       oblast: s.oblast, raion: s.raion, hromada: s.hromada,
-      start: s.start, end: s.end,
+      start: s.start, end: s.end ? addDays(s.end, 1) : s.end,
       merge: s.mode === "merged" ? true : s.mode === "raw" ? false : null,
       standingDays: s.standing === "off" ? null : Number(s.standing),
       hours: s.hours,
@@ -918,7 +930,7 @@ function monthChart(rows, state, avail) {
   const w = Math.max(avail, rows.length * 26), h = 200, pad = 28;
   const max = Math.max(...rows.map(r => r.count), 1);
   const bw = (w - pad * 2) / rows.length;
-  const selected = ym => state.start === `${ym}-01` && state.end === nextMonth(ym);
+  const selected = ym => state.start === `${ym}-01` && state.end === lastDayOfMonth(ym);
 
   const bars = rows.map((r, i) => {
     const bh = (r.count / max) * (h - pad * 2);
