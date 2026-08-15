@@ -321,7 +321,10 @@
 <script src="stats.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const STORE_LAST = "airalert.last.v1";
+// v2: the previous key may hold an hours filter of [0] written by the parsing
+// bug above, which would keep restoring midnight long after the fix. Changing
+// the key discards those entries once instead of stranding them.
+const STORE_LAST = "airalert.last.v2";
 
 let META = null;
 let HOURS = new Set();     // Kyiv hours selected on the hour chart
@@ -426,7 +429,11 @@ function stateFromQuery() {
     end: q.get("to") || day(META.coverage.last),
     mode: q.get("mode") || "",
     standing: q.get("standing") || "7",
+    // The empty-string guard matters: "".split(",") is [""], Number("") is 0,
+    // and 0 is a valid hour — so a URL carrying any parameter but no `hours`
+    // silently selected midnight.
     hours: (q.get("hours") || "").split(",")
+      .filter(part => part !== "")
       .map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 23),
   };
 }
