@@ -11,24 +11,12 @@ Statistics over Ukrainian air raid alerts: **how many**, **how long on average**
 
 No logger was needed — a complete, free, daily-updated historical dataset already exists.
 
-## Built entirely by AI
+## Built with Claude
 
-Every line of code in this repository was written by Claude, and so was every
-commit. Nothing here was typed by hand — not a function, not a fix, not a
-commit message.
-
-That was the point. This is a deliberate test of how far a current language
-model gets when the target is a whole working thing rather than a snippet:
-finding and cleaning a messy dataset, the statistics, a JavaScript port checked
-against the Python reference on every build, hosting, CI, and a refresh that
-runs each morning with nobody watching.
-
-The human side was direction and judgement — what to build, which
-interpretations were wrong, what to throw away — plus the things only an account
-holder can do, like connecting Cloudflare and handling secrets.
-
-It is a real product regardless: deployed, in use, and updating itself daily.
-Being an experiment did not make it a toy.
+Built largely with Claude — the AI generated most of the code and commits, while
+the human role was setting direction, reviewing results, and handling
+infrastructure and security-related tasks. The result is a real, deployed
+application that updates itself daily.
 
 ## Data source
 
