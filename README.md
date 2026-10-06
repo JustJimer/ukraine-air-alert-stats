@@ -237,6 +237,33 @@ more are reported in their own section instead of being mixed into the
 statistics. Change the threshold, or fold them back in, from the
 **Standing alerts** dropdown (`--standing-days` on the CLI, `0` to disable).
 
+## Yellow and red levels
+
+From **2026-09-06** every alert carries a level: **yellow** for drone raids and
+**red** for missile, ballistic and massed attacks. One episode can change level
+while it runs — no alert, red, yellow, red, no alert — and the API records each
+of those as its own record, so a single night of sirens can appear as several
+alerts at different levels.
+
+The filter and the split only appear when the current selection actually
+contains levelled alerts. Offering "Red only" against four years of records
+collected before levels existed would return nothing and read as a bug rather
+than as a property of the data. Where a selection straddles the date, the block
+states how many of its declarations predate levels instead of quietly reporting
+the split of whichever part happens to have them.
+
+Two details that follow from how alerts are counted here:
+
+- **The level filter applies before merging.** Merging first would fuse a
+  yellow alert into an overlapping red one, and the result would belong to
+  neither level.
+- **The split counts declarations, not merged episodes**, because a merged
+  episode can span both levels and so has no single level to report.
+
+In the packed data, level `0` means "no level recorded" — every row from before
+the reform — rather than a third level. Four years of history should not
+acquire a category that did not exist when it was collected.
+
 ## Two counting modes — read this before quoting numbers
 
 Alerts are declared at mixed granularity, and a query for one raion must also
