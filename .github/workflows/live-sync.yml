@@ -42,6 +42,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The sync itself only needs the standard library, but importing
+      # anything from the airalert package pulls in data.py, and that needs
+      # pandas.
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
       - name: Pull the last month of alerts
         env:
           ALERTS_IN_UA_TOKEN: ${{ secrets.ALERTS_IN_UA_TOKEN }}
