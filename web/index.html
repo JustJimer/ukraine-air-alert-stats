@@ -90,6 +90,19 @@
   .disclaimer strong { letter-spacing: .2px; }
   .disclaimer a { color: var(--nf-dark-green); }
 
+  /* Shown only when the feed has gone quiet for longer than it ever does
+     normally. Orange rather than the disclaimer's pink, because this is a
+     statement about the data being incomplete, not about how it is processed. */
+  .stale {
+    background: #fff4e0;
+    border-bottom: 1px solid var(--nf-orange);
+    padding: 11px 24px;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .stale b { color: #8a4b00; }
+  .stale a { color: var(--nf-dark-green); }
+
   main { padding: 20px 24px 60px; max-width: 1180px; }
 
   .filters {
@@ -298,6 +311,8 @@
     <span class="k">Latest stored alert</span><span class="v" id="latest-value"></span>
   </div>
 </header>
+
+<div class="stale" id="stale" role="note" hidden></div>
 
 <div class="disclaimer" role="note">
   Source data comes from the
@@ -537,6 +552,27 @@ async function loadAlerts() {
   return response.arrayBuffer();
 }
 
+/* The feed updated every day for three years, so a gap of more than two days
+   means it has stopped, not that it was a quiet week. Checked against the
+   clock in the browser rather than baked in at build time: the site still
+   rebuilds daily, so a figure written into the page would say "0 days old"
+   every morning while the data underneath it stayed frozen. */
+const STALE_AFTER_DAYS = 2;
+
+function reportStaleness(lastISO) {
+  const days = Math.floor((Date.now() - Date.parse(lastISO)) / 86400000);
+  if (!(days >= STALE_AFTER_DAYS)) return;
+
+  $("stale").innerHTML = `<b>No new alerts for ${num(days)} days.</b>
+    The upstream official dataset stopped on ${esc(day(lastISO))}, when Ukraine
+    split air alerts into yellow and red levels and the format it is parsed from
+    changed. Everything below covers up to that date and is still accurate for
+    that period — it is just not current.
+    <a href="https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset/issues/7"
+       target="_blank" rel="noopener noreferrer">Upstream issue</a>.`;
+  $("stale").hidden = false;
+}
+
 async function boot() {
   // The whole dataset ships with the page — under a megabyte gzipped — so
   // every filter is answered locally with no server and no round-trip.
@@ -561,6 +597,7 @@ async function boot() {
   // Kyiv time, matching the hour chart, so the whole page speaks one clock.
   $("latest-value").textContent = `${kyivTime(c.last)} Kyiv`;
   $("latest").hidden = false;
+  reportStaleness(c.last);
   if (META.generated_at) $("built").textContent = `data packed ${kyivTime(META.generated_at)} Kyiv`;
 
   for (const name of Object.keys(META.gazetteer)) $("oblast").append(new Option(name, name));
