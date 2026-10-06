@@ -15,6 +15,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 DATASETS = {
@@ -85,6 +86,92 @@ def load(dataset: str = "official", force_download: bool = False) -> pd.DataFram
     df["duration_min"] = df["duration_min"].where(df["duration_min"] >= 0)
 
     return df.sort_values("started_at", ignore_index=True)
+
+
+ARCHIVE = Path(__file__).resolve().parent.parent / "archive" / "alerts_in_ua.csv"
+
+# Ukraine split alerts into yellow and red levels on this date, and the old
+# feed's parser broke on the same change. Using it as the seam means the join
+# falls on a real change in how alerts are declared, rather than in the middle
+# of a week for reasons only this project knows about. The last day and a half
+# of the old feed is dropped in favour of the new source, which covers the same
+# hours and carries the levels.
+CUTOVER = pd.Timestamp("2026-09-06", tz="UTC")
+
+
+def load_live() -> pd.DataFrame:
+    """The alerts.in.ua archive, mapped onto this project's columns.
+
+    The archive stores the API's own fields, so the mapping lives here and can
+    be corrected and replayed over everything already collected.
+    """
+    from airalert.alerts_api import area_names
+
+    if not ARCHIVE.exists():
+        return pd.DataFrame(
+            columns=["oblast", "raion", "hromada", "level", "started_at",
+                     "finished_at", "source", "alert_level"]
+        )
+
+    raw = pd.read_csv(ARCHIVE, dtype="string")
+    if raw.empty:
+        return pd.DataFrame(
+            columns=["oblast", "raion", "hromada", "level", "started_at",
+                     "finished_at", "source", "alert_level"]
+        )
+
+    areas = [area_names(row) for row in raw.to_dict("records")]
+    df = pd.DataFrame(areas, columns=["oblast", "raion", "hromada"], dtype="string")
+
+    for column in ("started_at", "finished_at"):
+        df[column] = pd.to_datetime(raw[column], utc=True, errors="coerce", format="ISO8601")
+
+    # Derived rather than taken from location_type, so it always agrees with
+    # which columns are actually set — which is the rule build.py enforces.
+    df["level"] = np.where(df["hromada"].notna(), "hromada",
+                  np.where(df["raion"].notna(), "raion", "oblast"))
+    df["level"] = df["level"].astype("string")
+    df["source"] = "alerts.in.ua"
+    df["alert_level"] = raw["alert_level"].replace("", pd.NA)
+
+    return df.dropna(subset=["started_at", "oblast"])
+
+
+def load_combined(force_download: bool = False) -> pd.DataFrame:
+    """The frozen official archive before the cutover, alerts.in.ua after it.
+
+    The two sources count differently — the old one is a Telegram parse, the
+    new one an API — so they are joined at the regime change rather than
+    blended, and the seam is stated in the metadata for the page to show.
+    """
+    official = load("official", force_download=force_download)
+    live = load_live()
+    after = live[live["started_at"] >= CUTOVER] if len(live) else live
+
+    # Only cut the old feed short when there is something to put in its place.
+    # Otherwise a missing or empty archive — a failed sync, a fresh clone —
+    # would silently drop the old feed's last day and a half and replace it
+    # with nothing, which looks exactly like a quiet period in the data.
+    before = official[official["started_at"] < CUTOVER] if len(after) else official
+
+    if "alert_level" not in before.columns:
+        before = before.assign(alert_level=pd.Series(pd.NA, index=before.index, dtype="string"))
+
+    # Concatenating an empty frame would upcast the timestamp columns to
+    # object dtype and break .dt downstream, which is the same trap empty
+    # frames set in stats.merge_overlaps.
+    combined = pd.concat([before, after], ignore_index=True) if len(after) else before.copy()
+    combined["ongoing"] = combined["finished_at"].isna()
+    combined["duration_min"] = (
+        combined["finished_at"] - combined["started_at"]
+    ).dt.total_seconds() / 60.0
+    combined["duration_min"] = combined["duration_min"].where(combined["duration_min"] >= 0)
+
+    combined.attrs["duplicates_dropped"] = official.attrs.get("duplicates_dropped", 0)
+    combined.attrs["cutover"] = CUTOVER.isoformat()
+    combined.attrs["live_rows"] = int(len(after))
+    combined.attrs["official_rows"] = int(len(before))
+    return combined.sort_values("started_at", ignore_index=True)
 
 
 def gazetteer(df: pd.DataFrame) -> dict:
