@@ -150,6 +150,8 @@
   }
   label { display: block; font-size: 11px; text-transform: uppercase;
           letter-spacing: .6px; color: var(--muted); margin-bottom: 5px; }
+  /* Not uppercased: it is a date, and small caps make one hard to read. */
+  label .since { text-transform: none; letter-spacing: 0; color: var(--nf-blue); }
   select, input {
     width: 100%; background: #fff; color: var(--ink);
     border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit;
@@ -363,7 +365,7 @@
       <input type="date" id="end">
     </div>
     <div id="level-filter" hidden>
-      <label for="level">Alert level</label>
+      <label for="level">Alert level <span class="since" id="level-since"></span></label>
       <select id="level">
         <option value="">Both levels</option>
         <option value="red">Red only</option>
@@ -660,6 +662,10 @@ async function boot() {
   // and look like a bug rather than a property of the data.
   LEVELLED_FROM = meta.levelled_from || null;
   $("level-filter").hidden = !(meta.levelled_rows > 0);
+  // Say where the levels start, on the control itself. Choosing one silently
+  // drops every alert before that date — four fifths of the record — and the
+  // filter should not look like it simply found nothing.
+  if (LEVELLED_FROM) $("level-since").textContent = `from ${day(LEVELLED_FROM)}`;
   if (META.generated_at) $("built").textContent = `data packed ${kyivTime(META.generated_at)} Kyiv`;
 
   for (const name of Object.keys(META.gazetteer)) $("oblast").append(new Option(name, name));
