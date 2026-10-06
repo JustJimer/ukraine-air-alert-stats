@@ -74,7 +74,11 @@ jobs:
 
       - name: Commit the archive if it changed
         run: |
-          if git diff --quiet -- archive/; then
+          # git status, not git diff: a diff does not see untracked files, so
+          # on the first run — when the archive is created rather than
+          # modified — the check reported "nothing to commit" and threw away
+          # a completed sweep of every region.
+          if [ -z "$(git status --porcelain -- archive/)" ]; then
             echo "no new alerts today — nothing to commit"
             exit 0
           fi
