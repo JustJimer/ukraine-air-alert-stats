@@ -230,6 +230,25 @@ def by_level(df: pd.DataFrame) -> dict:
     return out
 
 
+def by_hour_level(df: pd.DataFrame) -> dict:
+    """Start-hour distribution split by level, Kyiv local time.
+
+    Drone raids and missile attacks do not arrive at the same hours, and the
+    combined histogram hides that: one curve is the sum of two different
+    shapes. Counted on declarations, like by_level, because a merged episode
+    can span both levels.
+    """
+    out = {level: [0] * 24 for level in ALERT_LEVELS}
+    if df.empty or "alert_level" not in df.columns:
+        return out
+
+    hours = local_hour(df)
+    for level in ALERT_LEVELS:
+        counts = hours[df["alert_level"] == level].value_counts()
+        out[level] = [int(counts.get(hour, 0)) for hour in range(24)]
+    return out
+
+
 def by_hour(df: pd.DataFrame) -> list[int]:
     """How many alerts started in each hour of the day, Kyiv local time."""
     if df.empty:
@@ -343,6 +362,10 @@ def report(
     # Before merging, not after: merging first would fuse a yellow alert into
     # an overlapping red one and the result would belong to neither level.
     level_distribution = by_level(selected)
+    # Both level views come from here, before the filter narrows `selected`,
+    # so they keep showing the whole split being selected against. Taken from
+    # the unmerged rows too: a merged episode can span both levels.
+    hour_levels = by_hour_level(selected)
     selected = select_levels(selected, levels)
 
     intervals = merge_overlaps(selected) if merge else selected
@@ -380,6 +403,7 @@ def report(
         },
         "by_month": by_month(intervals),
         "by_hour": hour_distribution,
+        "by_hour_level": hour_levels,
         "levels": sorted(levels) if levels else [],
         # Built before the level filter, so the page keeps showing the whole
         # split you are selecting against, as the hour chart does.

@@ -348,6 +348,24 @@
     return out;
   }
 
+  /* Mirror of stats.by_hour_level. Drone raids and missile attacks do not
+     arrive at the same hours, and one combined curve is the sum of two
+     different shapes. */
+  function byHourLevel(rows) {
+    const out = {};
+    for (const level of ALERT_LEVELS) out[level] = new Array(24).fill(0);
+    if (!D.levels) return out;
+
+    const nameOf = {};
+    for (const [code, name] of Object.entries(D.levelNames || {})) nameOf[Number(code)] = name;
+
+    for (const i of rows) {
+      const name = nameOf[D.levels[i]];
+      if (name && out[name]) out[name][D.hours[i]]++;
+    }
+    return out;
+  }
+
   /* ---------- the report the page renders ---------- */
 
   function report(opts) {
@@ -363,6 +381,7 @@
     // Before merging, not after: merging first would fuse a yellow alert into
     // an overlapping red one and the result would belong to neither level.
     const levelDistribution = byLevel(allRows);
+    const hourLevels = byHourLevel(allRows);
     const levels = (o.levels || []).slice().sort();
     const wantedCodes = levelCodes(levels);
     const rows = wantedCodes.size && D.levels
@@ -407,6 +426,7 @@
       },
       by_month: byMonth(intervals),
       by_hour: hourDistribution,
+      by_hour_level: hourLevels,
       levels,
       // Built before the level filter, so the page keeps showing the whole
       // split you are selecting against, as the hour chart does.

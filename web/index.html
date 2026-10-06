@@ -247,6 +247,15 @@
   .level-keys i { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
                   vertical-align: baseline; }
   .level-keys b { font-variant-numeric: tabular-nums; }
+  .level-hours { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .level-hours-head { font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+                      color: var(--muted); margin-bottom: 8px; }
+  .level-hours-head em { font-style: normal; text-transform: none; letter-spacing: 0;
+                         color: var(--nf-green); }
+  svg rect.lh { transition: opacity .1s; }
+  svg rect.lh.red { fill: var(--nf-red); }
+  svg rect.lh.yellow { fill: var(--nf-yellow); }
+  svg rect.lh:hover { opacity: .72; }
 
   /* ---- map ---- */
   /* Six steps of the additional palette, light to dark. A sequential ramp
@@ -1562,12 +1571,54 @@ function levelBlock(d, s) {
         <span><i class="yellow"></i> <b>${num(yellow.count)}</b> yellow · ${share(yellow.count)}%
           · ${num(Math.round(yellow.hours))} h</span>
       </div>
+      ${levelHourChart(d.by_hour_level || {}, chartWidth() - 34)
+        ? `<div class="level-hours">
+             <div class="level-hours-head">By start hour, Kyiv time
+               <em>· read-only; filter hours on the chart above</em></div>
+             ${levelHourChart(d.by_hour_level || {}, chartWidth() - 34)}
+           </div>` : ""}
       ${partial ? `<div class="note">${num(d.declarations - total)} of the
         ${num(d.declarations)} declarations in this selection predate levels and are
         not counted here. ${s.level ? "The figures above cover only the chosen level."
         : "The figures above cover all of them."}</div>` : ""}
     </div>
   </section>`;
+}
+
+/* The two levels by start hour, side by side.
+
+   Its own chart rather than a split of the one above, because the two are
+   counted on different bases: that chart counts intervals, which are merged
+   when merging is on, while a level belongs to a declaration — a merged
+   episode can span both. Stacking them into one bar would have put two
+   different denominators in the same column without saying so. */
+function levelHourChart(by, avail) {
+  const red = by.red || [], yellow = by.yellow || [];
+  const max = Math.max(...red, ...yellow, 1);
+  if (!max || (!red.some(Boolean) && !yellow.some(Boolean))) return "";
+
+  const w = Math.min(720, Math.max(240, avail)), h = 140, pad = 26;
+  const slot = (w - pad * 2) / 24, bw = Math.max(1, slot / 2 - 1.5);
+
+  const bars = Array.from({ length: 24 }, (_, i) => {
+    const x = pad + i * slot;
+    const rh = (red[i] / max) * (h - pad * 2);
+    const yh = (yellow[i] / max) * (h - pad * 2);
+    const tip = `${hh(i)}–${String(i).padStart(2, "0")}:59<br>`
+              + `<b>${num(red[i] || 0)}</b> red<br><b>${num(yellow[i] || 0)}</b> yellow`;
+    const attrs = `data-tip="${esc(tip)}"`;
+    return `<rect class="lh red" x="${x + 0.5}" y="${h - pad - rh}" width="${bw}"
+                  height="${Math.max(rh, red[i] ? 1 : 0)}" rx="1.5" ${attrs}/>
+            <rect class="lh yellow" x="${x + bw + 2}" y="${h - pad - yh}" width="${bw}"
+                  height="${Math.max(yh, yellow[i] ? 1 : 0)}" rx="1.5" ${attrs}/>
+            ${i % 2 === 0 ? `<text x="${x + slot / 2}" y="${h - 9}" text-anchor="middle">${i}</text>` : ""}`;
+  }).join("");
+
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img"
+       aria-label="Alerts by start hour, red against yellow">
+      <text x="4" y="${pad - 8}">${num(max)} max</text>
+      <line class="baseline" x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}"/>
+      ${bars}</svg>`;
 }
 
 function standingBlock(st, area) {
