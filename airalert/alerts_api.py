@@ -129,13 +129,35 @@ def area_names(alert: dict) -> tuple[str | None, str | None, str | None]:
         return NAME_OVERRIDES.get(value) or translit(value)
 
     kind = alert.get("location_type")
-    oblast = name(alert.get("location_oblast"))
+    oblast_raw = alert.get("location_oblast")
+    oblast = name(oblast_raw)
     title = alert.get("location_title")
 
     if kind == "raion":
         return oblast, name(title), None
     if kind == "hromada":
         return oblast, name(alert.get("location_raion")), name(title)
-    # oblast, city and anything unexpected: the title is the area itself, and
-    # for the two cities with region status it is also the oblast column.
-    return oblast or name(title), None, None
+    if kind == "oblast" or title == oblast_raw:
+        return oblast or name(title), None, None
+
+    # A city, and anything unrecognised that is not the oblast itself: an area
+    # inside the oblast, finer than a raion, and the API gives no raion for it.
+    # It goes in the hromada column, never the oblast one. An oblast-level row
+    # is read as covering every raion beneath it, so filing "м. Харків" there
+    # would have counted a city alert against all seven Kharkiv raions — and
+    # there are 280 such records for that oblast in a single month.
+    return oblast, None, (city_name(title) if kind == "city" else name(title))
+
+
+def city_name(title: str | None) -> str | None:
+    """"м. Харків" -> "Kharkiv city", matching how Kyiv City already reads.
+
+    Only for the city type: an unrecognised type keeps its plain name, since
+    calling it a city would be inventing something the API did not say.
+    """
+    if not title:
+        return None
+    from airalert.geo import translit
+
+    bare = title.removeprefix("м. ").strip()
+    return f"{translit(bare)} city"
