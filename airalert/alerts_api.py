@@ -56,6 +56,22 @@ NAME_OVERRIDES = {
     "Автономна Республіка Крим": "Avtonomna Respublika Krym",
 }
 
+# The API reports a city's oblast but never its raion, so without this a query
+# for Kharkivskyi raion would miss every alert for Kharkiv the city sitting
+# inside it. Seven cities appear in the feed; each raion here was read out of
+# the same boundary source the map uses, by looking up the city's own "міська
+# громада" — not matched by name, because "Криворізька сільська громада" is a
+# different place in Donetska oblast entirely.
+CITY_RAION = {
+    "м. Харків": "Харківський район",
+    "м. Світловодськ": "Олександрійський район",
+    "м. Кривий Ріг": "Криворізький район",
+    "м. Запоріжжя": "Запорізький район",
+    "м. Нікополь": "Нікопольський район",
+    "м. Дніпро": "Дніпровський район",
+    "м. Марганець": "Нікопольський район",
+}
+
 HISTORY_INTERVAL = 31.0   # seconds between history calls; the limit is 2/min
 GENERAL_INTERVAL = 7.0    # the soft limit elsewhere is 8-10/min
 
@@ -141,12 +157,16 @@ def area_names(alert: dict) -> tuple[str | None, str | None, str | None]:
         return oblast or name(title), None, None
 
     # A city, and anything unrecognised that is not the oblast itself: an area
-    # inside the oblast, finer than a raion, and the API gives no raion for it.
-    # It goes in the hromada column, never the oblast one. An oblast-level row
-    # is read as covering every raion beneath it, so filing "м. Харків" there
-    # would have counted a city alert against all seven Kharkiv raions — and
-    # there are 280 such records for that oblast in a single month.
-    return oblast, None, (city_name(title) if kind == "city" else name(title))
+    # inside the oblast, finer than a raion. It goes in the hromada column,
+    # never the oblast one. An oblast-level row is read as covering every raion
+    # beneath it, so filing "м. Харків" there would have counted a city alert
+    # against all seven Kharkiv raions — and there are 280 such records for
+    # that oblast in a single month.
+    #
+    # The raion comes from CITY_RAION, since the API does not give one. A city
+    # missing from that table keeps an empty raion, which is the old behaviour:
+    # worse, but not wrong, and sync_live reports it so it can be added.
+    return oblast, name(CITY_RAION.get(title)), (city_name(title) if kind == "city" else name(title))
 
 
 def city_name(title: str | None) -> str | None:

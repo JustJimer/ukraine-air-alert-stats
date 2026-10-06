@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     before = len(existing)
     added = updated = 0
     levelled = deep = 0
+    unmapped_cities = set()
 
     print(f"archive holds {before:,} records")
     print(f"sweeping {len(uids)} regions (~{len(uids) * alerts_api.HISTORY_INTERVAL / 60:.0f} min "
@@ -106,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
                 levelled += 1
             if row["location_type"] not in ("", "oblast"):
                 deep += 1
+            # A city the lookup does not know keeps an empty raion, so a query
+            # for the raion around it silently misses it. Name it here rather
+            # than let the gap reopen unnoticed.
+            if row["location_type"] == "city" and row["location_title"] not in alerts_api.CITY_RAION:
+                unmapped_cities.add(row["location_title"])
 
             previous = existing.get(row["id"])
             if previous is None:
@@ -122,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n{added:,} new, {updated:,} updated, {len(existing):,} total")
     print(f"records carrying a level: {levelled:,}")
     print(f"records below oblast level: {deep:,}")
+    if unmapped_cities:
+        print(f"::warning title=City without a raion::add to alerts_api.CITY_RAION: "
+              f"{', '.join(sorted(unmapped_cities))}")
 
     if args.dry_run:
         print("dry run — archive not written")
