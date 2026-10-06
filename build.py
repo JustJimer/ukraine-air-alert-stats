@@ -145,11 +145,28 @@ def build_tree(df: pd.DataFrame, oblast_ix: dict, raion_ix: dict, hromada_ix: di
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="build")
     parser.add_argument("--update", action="store_true", help="force a fresh download")
-    parser.add_argument("--dataset", default="official", choices=sorted(data.DATASETS))
+    parser.add_argument("--dataset", default="combined",
+                        choices=sorted([*data.DATASETS, "combined"]))
     args = parser.parse_args(argv)
 
-    print(f"loading {args.dataset} dataset ...")
-    df = data.load(args.dataset, force_download=args.update)
+    # The default joins the frozen official archive to the alerts.in.ua feed
+    # that replaced it. --dataset still loads one feed on its own, which is
+    # what parity.py and the CLI's single-source reports want.
+    if args.dataset == "combined":
+        print("loading official archive + alerts.in.ua ...")
+        df = data.load_combined(force_download=args.update)
+        live = df.attrs["live_rows"]
+        # Say whether the cutover actually applied. It does not when there is
+        # no archive yet, and claiming it did would hide that the new source
+        # contributed nothing.
+        where = f"to {data.CUTOVER.date()}" if live else "in full, cutover not applied"
+        print(f"  {df.attrs['official_rows']:,} from the official archive ({where}),"
+              f" {live:,} from alerts.in.ua")
+        if not live:
+            print("  !! no alerts.in.ua data — archive/ is empty or the sync has not run")
+    else:
+        print(f"loading {args.dataset} dataset ...")
+        df = data.load(args.dataset, force_download=args.update)
 
     buffer, meta = pack(df)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
