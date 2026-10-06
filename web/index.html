@@ -567,19 +567,47 @@ const writeStore = (key, value) => {
    Hosts compress text responses automatically but leave application/octet-stream
    alone, so the raw file arrives at full size — about three times bigger. The
    plain file remains the fallback for browsers without DecompressionStream. */
-async function loadAlerts() {
+async function loadAlerts(fresh = false) {
+  const opts = fresh ? { cache: "no-store" } : undefined;
+
   if ("DecompressionStream" in window) {
     try {
-      const response = await fetch("data/alerts.bin.gz");
+      const response = await fetch("data/alerts.bin.gz", opts);
       if (response.ok) {
         const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
         return await new Response(stream).arrayBuffer();
       }
     } catch { /* fall through to the uncompressed copy */ }
   }
-  const response = await fetch("data/alerts.bin");
+  const response = await fetch("data/alerts.bin", opts);
   if (!response.ok) throw new Error(`alerts.bin responded ${response.status}`);
   return response.arrayBuffer();
+}
+
+/* meta.json describes the binary's layout, and a deploy replaces the two as
+   separate files. A page load landing between them gets a description of one
+   build and the bytes of another, and the typed arrays are then built past the
+   end of the buffer — which surfaces as "Invalid typed array length" and a
+   blank page, with nothing to say the cause was transient.
+
+   So the pair is checked against each other and fetched again, past any cache,
+   when they disagree. Observed on a real deploy rather than imagined: the
+   first load after one shipped exactly this. */
+async function loadPair() {
+  let meta = await fetch("data/meta.json").then(r => r.json());
+  let buffer = await loadAlerts();
+  if (buffer.byteLength === meta.bytes) return [meta, buffer];
+
+  [meta, buffer] = await Promise.all([
+    fetch("data/meta.json", { cache: "no-store" }).then(r => r.json()),
+    loadAlerts(true),
+  ]);
+  if (buffer.byteLength !== meta.bytes) {
+    throw new Error(
+      `the data and its description do not match (${buffer.byteLength} bytes against `
+      + `${meta.bytes} expected) — a deploy may be in progress, so try again shortly`);
+  }
+  return [meta, buffer];
 }
 
 /* The feed updated every day for three years, so a gap of more than two days
@@ -608,10 +636,7 @@ async function boot() {
   // every filter is answered locally with no server and no round-trip.
   let meta, buffer;
   try {
-    [meta, buffer] = await Promise.all([
-      fetch("data/meta.json").then(r => r.json()),
-      loadAlerts(),
-    ]);
+    [meta, buffer] = await loadPair();
   } catch (error) {
     $("body").innerHTML = `<div class="err">Could not load the alert data: ${esc(error.message)}</div>`;
     return;
