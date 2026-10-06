@@ -259,10 +259,13 @@
                       color: var(--muted); margin-bottom: 8px; }
   .level-hours-head em { font-style: normal; text-transform: none; letter-spacing: 0;
                          color: var(--nf-green); }
-  svg rect.lh { transition: opacity .1s; }
-  svg rect.lh.red { fill: var(--nf-red); }
-  svg rect.lh.yellow { fill: var(--nf-yellow); }
-  svg rect.lh:hover { opacity: .72; }
+  /* Unfilled, so where the two cross there is no blended third colour. The
+     yellow is darkened from the chart yellow, which is too pale to read as a
+     thin line on a white card. */
+  svg path.lv-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  svg path.lv-line.yellow { stroke: #e8a300; }
+  svg path.lv-line.red { stroke: var(--nf-red); }
+  svg rect.lh-hit { cursor: default; }
 
   /* ---- map ---- */
   /* Six steps of the additional palette, light to dark. A sequential ramp
@@ -1661,30 +1664,37 @@ function levelBlock(d, s) {
 function levelHourChart(by, avail) {
   const red = by.red || [], yellow = by.yellow || [];
   const max = Math.max(...red, ...yellow, 1);
-  if (!max || (!red.some(Boolean) && !yellow.some(Boolean))) return "";
+  if (!red.some(Boolean) && !yellow.some(Boolean)) return "";
 
-  const w = Math.min(720, Math.max(240, avail)), h = 140, pad = 26;
-  const slot = (w - pad * 2) / 24, bw = Math.max(1, slot / 2 - 1.5);
+  const w = Math.min(720, Math.max(240, avail)), h = 150, pad = 28;
+  const plot = h - pad * 2, slot = (w - pad * 2) / 24;
+  const x = i => pad + (i + 0.5) * slot;
+  const y = v => h - pad - (v / max) * plot;
 
-  const bars = Array.from({ length: 24 }, (_, i) => {
-    const x = pad + i * slot;
-    const rh = (red[i] / max) * (h - pad * 2);
-    const yh = (yellow[i] / max) * (h - pad * 2);
+  // Two lines, no fill. Paired bars put a red and a yellow column in every
+  // hour and read as a checkerboard; filled areas overlap into a third colour
+  // that means nothing. Bare lines leave only the thing worth seeing — whether
+  // the two peak at the same hour.
+  const curve = series => series.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  // A transparent column per hour carries the tooltip, so hovering anywhere in
+  // the hour works rather than only on the line itself.
+  const hits = Array.from({ length: 24 }, (_, i) => {
     const tip = `${hh(i)}–${String(i).padStart(2, "0")}:59<br>`
               + `<b>${num(red[i] || 0)}</b> red<br><b>${num(yellow[i] || 0)}</b> yellow`;
-    const attrs = `data-tip="${esc(tip)}"`;
-    return `<rect class="lh red" x="${x + 0.5}" y="${h - pad - rh}" width="${bw}"
-                  height="${Math.max(rh, red[i] ? 1 : 0)}" rx="1.5" ${attrs}/>
-            <rect class="lh yellow" x="${x + bw + 2}" y="${h - pad - yh}" width="${bw}"
-                  height="${Math.max(yh, yellow[i] ? 1 : 0)}" rx="1.5" ${attrs}/>
-            ${i % 2 === 0 ? `<text x="${x + slot / 2}" y="${h - 9}" text-anchor="middle">${i}</text>` : ""}`;
+    return `<rect class="lh-hit" x="${(pad + i * slot).toFixed(1)}" y="${pad}" width="${slot.toFixed(1)}"
+                  height="${plot}" fill="transparent" data-tip="${esc(tip)}"/>`;
   }).join("");
+
+  const ticks = Array.from({ length: 12 }, (_, k) =>
+    `<text x="${x(k * 2).toFixed(1)}" y="${h - 9}" text-anchor="middle">${k * 2}</text>`).join("");
 
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img"
        aria-label="Alerts by start hour, red against yellow">
-      <text x="4" y="${pad - 8}">${num(max)} max</text>
+      <text x="4" y="${pad - 10}">${num(max)} max</text>
       <line class="baseline" x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}"/>
-      ${bars}</svg>`;
+      <path class="lv-line yellow" d="${curve(yellow)}"/>
+      <path class="lv-line red" d="${curve(red)}"/>
+      ${hits}${ticks}</svg>`;
 }
 
 function standingBlock(st, area) {
