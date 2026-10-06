@@ -9,7 +9,29 @@ Statistics over Ukrainian air raid alerts: **how many**, **how long on average**
 > and the processing behind them may contain mistakes. The page carries the
 > same notice.
 
-No logger was needed — a complete, free, daily-updated historical dataset already exists.
+## The feed stopped on 2026-09-07 — read this first
+
+On **6 September 2026** Ukraine split air raid alerts into **yellow** (drone)
+and **red** (missile, ballistic, massed) levels, under Cabinet of Ministers
+resolution 1092. The upstream `official` dataset is parsed out of a Telegram
+channel, that channel's message format changed with the reform, and the parser
+has produced nothing since **2026-09-07**. Its repository still commits daily,
+but only to the volunteer files, which is why it looks alive from the outside.
+Two issues are open about it ([#6], [#7]) and the parser has not been touched
+since January.
+
+So the original premise — that no logger was needed, because a complete, free,
+daily-updated historical dataset already existed — held for three and a half
+years and no longer does. What that dataset covers, 2022-03-15 → 2026-09-07,
+remains accurate; it is simply finished. The page says so once the newest
+alert is more than two days old.
+
+Current data now comes from [alerts.in.ua](https://devs.alerts.in.ua/), which
+carries the yellow/red levels the reform introduced. See
+[Keeping the data fresh](#keeping-the-data-fresh).
+
+[#6]: https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset/issues/6
+[#7]: https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset/issues/7
 
 ## Built with Claude
 
@@ -21,14 +43,15 @@ updates itself daily.
 ## Data source
 
 [`Vadimkin/ukrainian-air-raid-sirens-dataset`](https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset)
-— CSV, no API key, no rate limit, refreshed daily.
+— CSV, no API key, no rate limit. Was refreshed daily; the `official` half stopped on 2026-09-07.
 
 | | |
 |---|---|
-| Coverage | 2022-03-15 → today (`official`), 2022-02-25 → today (`volunteer`) |
-| Rows | ~291,000 alert records |
+| Coverage | 2022-03-15 → **2026-09-07, ended** (`official`); 2022-02-25 → today (`volunteer`) |
+| Rows | ~299,000 alert records (`official`, final) |
 | Columns | `oblast, raion, hromada, level, started_at, finished_at, source` |
 | Granularity | oblast-level until Dec 2025, raion/hromada-level since |
+| Levels | none — the feed ended the day after yellow/red was introduced |
 
 Alternatives, both requiring a free API key and offering less history in one call:
 [alerts.in.ua](https://devs.alerts.in.ua/) (`/v1/regions/{uid}/alerts/{period}.json`)
@@ -85,21 +108,39 @@ No API token is needed: Cloudflare's GitHub App handles the connection.
 
 ### Keeping the data fresh
 
-Workers Builds rebuilds on every push, but has no schedule of its own. So:
+Workers Builds rebuilds on every push, but has no schedule of its own.
 
-1. Create a **Deploy Hook** under *Workers & Pages → the Worker → Settings →
-   Builds → Deploy Hooks*, pointed at `main`.
-2. Save its URL as the repository secret `CLOUDFLARE_DEPLOY_HOOK_URL`.
+**Current alerts** come from [alerts.in.ua](https://devs.alerts.in.ua/), which
+is the only source carrying the yellow/red levels. It needs a free token,
+granted on application, held as the repository secret `ALERTS_IN_UA_TOKEN`.
 
-`.github/workflows/daily-refresh.yml` then POSTs it at **04:00 UTC — 07:00
-Kyiv** daily, and on demand via *Run workflow*. The hook only rebuilds this
-project, so it is far less sensitive than an account API token.
+`.github/workflows/live-sync.yml` runs `sync_live.py` daily at 03:30 UTC. It
+sweeps all 27 regions, appends to `archive/alerts_in_ua.csv`, and commits —
+and that commit is what triggers the rebuild, so no deploy hook is involved.
+On a day with nothing new there is no commit and no build, which is right,
+because the page would be identical.
 
-That hour is picked from the upstream feed's own behaviour: its commits land
-between 01:23 and 03:19 UTC, so 04:00 clears the latest by about 40 minutes.
-GitHub's scheduler is best-effort and often runs a few minutes late, which only
-widens that gap. Cron is UTC only, so the run reads 06:00 Kyiv in winter — still
-after the feed, which keeps its own UTC schedule.
+Three properties worth knowing, because they shaped the design:
+
+- **The history endpoint reaches one month back**, so every run re-reads a
+  whole month per region and upserts on the API's own record id. The archive
+  therefore repairs itself: runs can fail, or be skipped for a fortnight, and
+  nothing is lost as long as one lands inside the month. It is also how an
+  alert that was still running when first seen gets its end time filled in.
+- **It is rate limited to 2 requests a minute**, separately from everything
+  else. A full sweep is about a quarter of an hour, which is why the job
+  allows forty minutes.
+- **The archive stores the API's own fields verbatim**, not this project's
+  columns, and the mapping happens at build time. The exact shape of these
+  records is documented thinly, so storing them raw means a mistaken mapping
+  can be corrected and replayed over data already collected, rather than
+  having been thrown away at write time. `probe_api.py` reports what the API
+  actually returns.
+
+**Historical data** is the frozen `official` CSV. `.github/workflows/daily-refresh.yml`
+still pings a Cloudflare Deploy Hook at 04:00 UTC to re-pull it. That is a
+no-op while the feed is dead — it rebuilds identical data — and is kept only
+so the project resumes by itself if the upstream parser is ever repaired.
 
 *Alternative:* GitHub Actions can do the whole build and deploy itself with
 `cloudflare/wrangler-action` and `CLOUDFLARE_API_TOKEN` +
@@ -318,6 +359,10 @@ airalert/data.py     download, cache, load, dedupe
 airalert/stats.py    reference implementation: selection, merging, metrics
 airalert/cli.py      command line reports
 airalert/geo.py      boundary geometry: transliterate, project, simplify
+airalert/alerts_api.py  alerts.in.ua client: regions, history, active
+sync_live.py         daily pull into archive/ (CI)
+probe_api.py         report what the API actually returns
+archive/             tracked alert archive from alerts.in.ua
 airalert/server.py   local static server
 web/index.html       the dashboard
 web/stats.js         browser port of airalert/stats.py

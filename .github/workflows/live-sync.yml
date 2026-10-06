@@ -1,0 +1,73 @@
+name: Sync alerts from alerts.in.ua
+
+# The official dataset this project was built on stopped on 2026-09-07, when
+# the alert system split into yellow and red levels and the format its parser
+# reads changed. This job keeps a tracked archive topped up from the
+# alerts.in.ua API instead, which carries the levels.
+#
+# Committing the archive is what triggers a deploy: Cloudflare Workers Builds
+# rebuilds on every push, so no deploy hook is needed here. On a day with
+# nothing new there is no commit, no build, and nothing to deploy — which is
+# correct, because the page would be identical.
+#
+# Needs one repository secret, ALERTS_IN_UA_TOKEN, from
+# https://devs.alerts.in.ua — free, granted on application.
+on:
+  schedule:
+    # Timing barely matters: each run re-reads a full month per region and
+    # upserts on record id, so the archive repairs itself. A fortnight of
+    # failed runs costs nothing as long as one lands inside the month. 03:30
+    # UTC simply keeps it clear of the hour everything else runs on.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+# Each run rewrites the same file and pushes it, so two at once would conflict.
+concurrency:
+  group: live-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # The sweep is 27 regions paced at the documented 2 requests a minute,
+    # so about a quarter of an hour, plus room for retries.
+    timeout-minutes: 40
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pull the last month of alerts
+        env:
+          ALERTS_IN_UA_TOKEN: ${{ secrets.ALERTS_IN_UA_TOKEN }}
+        run: |
+          # A secret can exist by name and still be empty — that is exactly
+          # how the deploy hook failed silently once before. The length is
+          # safe to print; GitHub masks the value itself.
+          echo "token length: ${#ALERTS_IN_UA_TOKEN}"
+          if [ -z "$ALERTS_IN_UA_TOKEN" ]; then
+            echo "ALERTS_IN_UA_TOKEN is empty or unset." >&2
+            echo "Set it at Settings > Secrets and variables > Actions." >&2
+            exit 1
+          fi
+          python sync_live.py
+
+      - name: Commit the archive if it changed
+        run: |
+          if git diff --quiet -- archive/; then
+            echo "no new alerts today — nothing to commit"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add archive/
+          git commit -m "Sync alerts from alerts.in.ua
+
+          Automated daily pull. Pushing this is what triggers the rebuild."
+          git push
