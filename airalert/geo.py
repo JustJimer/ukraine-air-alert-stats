@@ -38,8 +38,14 @@ ATTRIBUTION = {
 # cannot bridge them. Both are decommunisation renames of an existing area,
 # not boundary changes, so the geometry still applies.
 RENAMED = {
-    "Novomoskovskyi raion": "Samarivskyi raion",    # renamed 2024
-    "Novohrad-Volynskyi raion": "Zviahelskyi raion",  # renamed 2023
+    "Novomoskovskyi raion": "Samarivskyi raion",            # renamed 2024
+    "Novohrad-Volynskyi raion": "Zviahelskyi raion",        # renamed 2023
+    # These three only surfaced once alerts.in.ua data arrived: the old feed
+    # still used the superseded names, so the boundary file agreed with it and
+    # nothing looked wrong until a source using current names appeared.
+    "Krasnohradskyi raion": "Berestynskyi raion",           # renamed 2024
+    "Chervonohradskyi raion": "Sheptytskyi raion",          # renamed 2024
+    "Volodymyr-Volynskyi raion": "Volodymyrskyi raion",     # renamed 2021
 }
 
 # Kyiv is a region in its own right and the only one absent from the region

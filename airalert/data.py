@@ -102,6 +102,18 @@ ARCHIVE = Path(__file__).resolve().parent.parent / "archive" / "alerts_in_ua.csv
 # hours and carries the levels.
 CUTOVER = pd.Timestamp("2026-09-06", tz="UTC")
 
+# Raions renamed between the two sources, old name -> current name. The old
+# feed stopped before these took effect and alerts.in.ua only knows the new
+# ones, so without this the same place arrives as two separate areas: one
+# holding every alert up to 2026-09-07 and another holding everything since.
+# The current name wins — these are decommunisation renames, and the superseded
+# name should not be what the page offers.
+RENAMED_RAIONS = {
+    "Krasnohradskyi raion": "Berestynskyi raion",          # Kharkivska, 2024
+    "Chervonohradskyi raion": "Sheptytskyi raion",         # Lvivska, 2024
+    "Volodymyr-Volynskyi raion": "Volodymyrskyi raion",    # Volynska, 2021
+}
+
 
 def load_live() -> pd.DataFrame:
     """The alerts.in.ua archive, mapped onto this project's columns.
@@ -128,7 +140,14 @@ def load_live() -> pd.DataFrame:
     df = pd.DataFrame(areas, columns=["oblast", "raion", "hromada"], dtype="string")
 
     for column in ("started_at", "finished_at"):
-        df[column] = pd.to_datetime(raw[column], utc=True, errors="coerce", format="ISO8601")
+        # Rounded to the second. The API reports milliseconds, the old feed did
+        # not, and the packed format stores whole seconds — so keeping the
+        # fraction here would leave the Python reference and the browser
+        # disagreeing by a tenth of a minute on alerts they both read correctly.
+        # A siren's start is not meaningfully known to the millisecond anyway.
+        df[column] = pd.to_datetime(
+            raw[column], utc=True, errors="coerce", format="ISO8601"
+        ).dt.round("s")
 
     # Derived rather than taken from location_type, so it always agrees with
     # which columns are actually set — which is the rule build.py enforces.
@@ -157,6 +176,7 @@ def load_combined(force_download: bool = False) -> pd.DataFrame:
     # would silently drop the old feed's last day and a half and replace it
     # with nothing, which looks exactly like a quiet period in the data.
     before = official[official["started_at"] < CUTOVER] if len(after) else official
+    before = before.assign(raion=before["raion"].replace(RENAMED_RAIONS))
 
     if "alert_level" not in before.columns:
         before = before.assign(alert_level=pd.Series(pd.NA, index=before.index, dtype="string"))

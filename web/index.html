@@ -621,7 +621,8 @@ async function boot() {
   META = { gazetteer: AlertStats.gazetteer(), coverage: meta.coverage, generated_at: meta.generated_at };
   const c = META.coverage;
   $("coverage").textContent =
-    `${num(c.rows)} alert records · ${day(c.first)} → ${day(c.last)} · official feed`
+    `${num(c.rows)} alert records · ${day(c.first)} → ${day(c.last)} · `
+    + (meta.levelled_rows > 0 ? "official archive + alerts.in.ua" : "official feed")
     + (c.duplicates_dropped ? ` · ${num(c.duplicates_dropped)} duplicate rows removed` : "");
 
   // Kyiv time, matching the hour chart, so the whole page speaks one clock.
