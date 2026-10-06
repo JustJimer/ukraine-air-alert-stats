@@ -198,6 +198,38 @@ def select_hours(df: pd.DataFrame, hours: Sequence[int] | None) -> pd.DataFrame:
     return df[local_hour(df).isin(list(hours))]
 
 
+ALERT_LEVELS = ("red", "yellow")
+
+
+def select_levels(df: pd.DataFrame, levels: Sequence[str] | None) -> pd.DataFrame:
+    """Alerts declared at any of the given levels.
+
+    Levels exist only from 2026-09-06; everything before that carries none, so
+    filtering by level necessarily excludes the whole earlier archive. That is
+    a property of the data rather than of this filter, and the page says so.
+    """
+    if not levels or df.empty or "alert_level" not in df.columns:
+        return df
+    return df[df["alert_level"].isin(list(levels))]
+
+
+def by_level(df: pd.DataFrame) -> dict:
+    """Declarations and hours at each level.
+
+    Counted on declarations rather than merged episodes: a merged episode can
+    span a yellow alert and a red one, so it has no single level to report.
+    """
+    out = {level: {"count": 0, "hours": 0.0} for level in ALERT_LEVELS}
+    if df.empty or "alert_level" not in df.columns:
+        return out
+
+    for level in ALERT_LEVELS:
+        rows = df[df["alert_level"] == level]
+        minutes = float(rows["duration_min"].sum()) if len(rows) else 0.0
+        out[level] = {"count": int(len(rows)), "hours": round(minutes / 60.0, 1)}
+    return out
+
+
 def by_hour(df: pd.DataFrame) -> list[int]:
     """How many alerts started in each hour of the day, Kyiv local time."""
     if df.empty:
@@ -294,6 +326,7 @@ def report(
     merge: bool | None = None,
     standing_days: float | None = STANDING_ALERT_DAYS,
     hours: Sequence[int] | None = None,
+    levels: Sequence[str] | None = None,
     ranking_limit: int = 15,
 ) -> dict:
     """Full statistics payload for one area/period selection.
@@ -306,6 +339,12 @@ def report(
         merge = oblast is not None
 
     selected = select_period(select_area(df, oblast, raion, hromada), start, end)
+
+    # Before merging, not after: merging first would fuse a yellow alert into
+    # an overlapping red one and the result would belong to neither level.
+    level_distribution = by_level(selected)
+    selected = select_levels(selected, levels)
+
     intervals = merge_overlaps(selected) if merge else selected
 
     standing = intervals.iloc[:0]
@@ -341,6 +380,10 @@ def report(
         },
         "by_month": by_month(intervals),
         "by_hour": hour_distribution,
+        "levels": sorted(levels) if levels else [],
+        # Built before the level filter, so the page keeps showing the whole
+        # split you are selecting against, as the hour chart does.
+        "by_level": level_distribution,
         # The table shows a top 15; the map needs every child area, so the
         # limit is caller's choice rather than fixed here.
         "ranking": ranking(

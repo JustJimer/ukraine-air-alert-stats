@@ -32,6 +32,11 @@
       oblast: new Uint8Array(buffer, o.oblast, n),
       raion: new Uint16Array(buffer, o.raion, n),
       hromada: new Uint16Array(buffer, o.hromada, n),
+      // 0 is "no level recorded", which is every row from before 2026-09-06,
+      // not a third level.
+      levels: o.levels === undefined ? null : new Uint8Array(buffer, o.levels, n),
+      levelNames: meta.levels || {},
+      levelledFrom: meta.levelled_from || null,
       oblasts: meta.oblasts,
       raions: meta.raions,
       hromadas: meta.hromadas,
@@ -306,6 +311,43 @@
     return { field, shared: sharedCount, rows: out.slice(0, limit == null ? 15 : limit) };
   }
 
+  const ALERT_LEVELS = ["red", "yellow"];
+
+  /* Mirror of stats.select_levels. Levels exist only from 2026-09-06, so
+     filtering by one necessarily excludes the earlier archive — a property of
+     the data, not of this filter. */
+  function levelCodes(names) {
+    const wanted = new Set(names || []);
+    const codes = new Set();
+    for (const [code, name] of Object.entries(D.levelNames || {})) {
+      if (wanted.has(name)) codes.add(Number(code));
+    }
+    return codes;
+  }
+
+  /* Counted on declarations, not merged episodes: a merged episode can span a
+     yellow alert and a red one, so it has no single level to report. */
+  function byLevel(rows) {
+    const out = {};
+    for (const level of ALERT_LEVELS) out[level] = { count: 0, hours: 0 };
+    if (!D.levels) return out;
+
+    const nameOf = {};
+    for (const [code, name] of Object.entries(D.levelNames || {})) nameOf[Number(code)] = name;
+
+    const minutes = {};
+    for (const i of rows) {
+      const name = nameOf[D.levels[i]];
+      if (!name || !out[name]) continue;
+      out[name].count++;
+      if (D.durations[i] !== D.noDuration) {
+        minutes[name] = (minutes[name] || 0) + D.durations[i] / 60;
+      }
+    }
+    for (const level of ALERT_LEVELS) out[level].hours = round1((minutes[level] || 0) / 60);
+    return out;
+  }
+
   /* ---------- the report the page renders ---------- */
 
   function report(opts) {
@@ -316,7 +358,17 @@
     const hours = (o.hours || []).slice().sort((a, b) => a - b);
     const hourSet = new Set(hours);
 
-    const rows = selectRows(oblast, raion, hromada, o.start, o.end);
+    const allRows = selectRows(oblast, raion, hromada, o.start, o.end);
+
+    // Before merging, not after: merging first would fuse a yellow alert into
+    // an overlapping red one and the result would belong to neither level.
+    const levelDistribution = byLevel(allRows);
+    const levels = (o.levels || []).slice().sort();
+    const wantedCodes = levelCodes(levels);
+    const rows = wantedCodes.size && D.levels
+      ? allRows.filter(i => wantedCodes.has(D.levels[i]))
+      : allRows;
+
     let intervals = merge ? mergeOverlaps(toIntervals(rows)) : toIntervals(rows);
 
     const standing = [];
@@ -355,6 +407,10 @@
       },
       by_month: byMonth(intervals),
       by_hour: hourDistribution,
+      levels,
+      // Built before the level filter, so the page keeps showing the whole
+      // split you are selecting against, as the hour chart does.
+      by_level: levelDistribution,
       // The table shows a top 15; the map needs every child area, so the
       // limit is caller's choice rather than fixed here.
       ranking: ranking(

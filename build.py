@@ -30,6 +30,10 @@ OUT_DIR = Path(__file__).resolve().parent / "web" / "data"
 
 NO_DURATION = 0xFFFFFFFF  # sentinel for an alert with no recorded end
 
+# Alert levels, introduced 2026-09-06. 0 means the record predates them, which
+# is every row from the old feed — not "neither red nor yellow".
+LEVEL_CODES = {"red": 1, "yellow": 2}
+
 
 def pack(df: pd.DataFrame) -> tuple[bytes, dict]:
     """Columnar little-endian buffer plus the metadata describing it."""
@@ -70,6 +74,12 @@ def pack(df: pd.DataFrame) -> tuple[bytes, dict]:
     months = (naive.dt.to_period("M") - base_month).apply(lambda x: x.n).to_numpy(dtype=np.uint16)
     hours = stats.local_hour(df).to_numpy(dtype=np.uint8)
 
+    levels = (
+        df["alert_level"].map(LEVEL_CODES).fillna(0).to_numpy(dtype=np.uint8)
+        if "alert_level" in df.columns
+        else np.zeros(n, dtype=np.uint8)
+    )
+
     oblast_ix = {name: i for i, name in enumerate(oblasts)}
     raion_ix = {name: i + 1 for i, name in enumerate(raions)}
     hromada_ix = {name: i + 1 for i, name in enumerate(hromadas)}
@@ -89,7 +99,7 @@ def pack(df: pd.DataFrame) -> tuple[bytes, dict]:
     columns = [
         ("starts", starts), ("durations", durations), ("months", months),
         ("hours", hours), ("oblast", oblast_col), ("raion", raion_col),
-        ("hromada", hromada_col),
+        ("hromada", hromada_col), ("levels", levels),
     ]
 
     buffer, offsets, cursor = bytearray(), {}, 0
@@ -116,6 +126,12 @@ def pack(df: pd.DataFrame) -> tuple[bytes, dict]:
         "tree": build_tree(df, oblast_ix, raion_ix, hromada_ix),
         "coverage": data.coverage(df),
         "standing_alert_days": stats.STANDING_ALERT_DAYS,
+        # 0 is absent rather than a third level, so the page can tell "before
+        # levels existed" from "red" and "yellow" instead of inventing a
+        # category for four years of history.
+        "levels": {str(code): name for name, code in LEVEL_CODES.items()},
+        "levelled_from": df.attrs.get("cutover"),
+        "levelled_rows": int((levels > 0).sum()),
     }
     return bytes(buffer), meta
 

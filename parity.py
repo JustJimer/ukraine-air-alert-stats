@@ -53,7 +53,11 @@ def timestamp(value: str | None) -> pd.Timestamp | None:
 
 
 def main() -> int:
-    df = data.load()
+    # The same source build.py packs. Loading only the official feed here
+    # compared Python's answers against a different dataset than the one
+    # stats.js was reading, which showed up as a disagreement over which of
+    # eight equally long alerts was the longest.
+    df = data.load_combined()
     cases = []
 
     for label, kwargs in SCENARIOS:

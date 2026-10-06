@@ -85,7 +85,11 @@ def load(dataset: str = "official", force_download: bool = False) -> pd.DataFram
     # dtype, which silently breaks every numeric method downstream.
     df["duration_min"] = df["duration_min"].where(df["duration_min"] >= 0)
 
-    return df.sort_values("started_at", ignore_index=True)
+    # mergesort for stability. The default quicksort reorders rows that share
+    # a timestamp arbitrarily, and one oblast-wide siren appears as eight rows
+    # with identical start and end times — so an unstable sort silently changes
+    # which of them is reported as the longest alert.
+    return df.sort_values("started_at", kind="mergesort", ignore_index=True)
 
 
 ARCHIVE = Path(__file__).resolve().parent.parent / "archive" / "alerts_in_ua.csv"
@@ -171,7 +175,7 @@ def load_combined(force_download: bool = False) -> pd.DataFrame:
     combined.attrs["cutover"] = CUTOVER.isoformat()
     combined.attrs["live_rows"] = int(len(after))
     combined.attrs["official_rows"] = int(len(before))
-    return combined.sort_values("started_at", ignore_index=True)
+    return combined.sort_values("started_at", kind="mergesort", ignore_index=True)
 
 
 def gazetteer(df: pd.DataFrame) -> dict:
