@@ -50,11 +50,20 @@ jobs:
           # how the deploy hook failed silently once before. The length is
           # safe to print; GitHub masks the value itself.
           echo "token length: ${#ALERTS_IN_UA_TOKEN}"
+
+          # No token yet is a known state, not a breakage, so this warns and
+          # skips rather than failing a run every morning until one is added.
+          # The silence that would normally make skipping dangerous is covered
+          # from the other end: the page itself says so once the newest alert
+          # is more than two days old, so a sync that quietly stopped working
+          # shows up to anyone looking at the site.
           if [ -z "$ALERTS_IN_UA_TOKEN" ]; then
-            echo "ALERTS_IN_UA_TOKEN is empty or unset." >&2
-            echo "Set it at Settings > Secrets and variables > Actions." >&2
-            exit 1
+            echo "::warning title=No API token::ALERTS_IN_UA_TOKEN is empty or unset, so no alerts were fetched. Add it at Settings > Secrets and variables > Actions; apply for one at https://devs.alerts.in.ua"
+            exit 0
           fi
+
+          # Past this point a token exists, so anything that goes wrong is a
+          # real failure and is left to fail.
           python sync_live.py
 
       - name: Commit the archive if it changed
