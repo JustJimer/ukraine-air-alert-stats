@@ -45,6 +45,13 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("hromada", {"oblast": "Lvivska oblast", "raion": "Lvivskyi raion",
                  "hromada": "Lvivska terytorialna hromada"}),
     ("empty period", {"oblast": "Lvivska oblast", "start": "2022-03-01", "end": "2022-03-02"}),
+    # Levels exist only from 2026-09-06. These are empty until the archive has
+    # been synced at least once, which is itself worth pinning: both sides must
+    # agree on an empty result, and that is exactly where empty frames have
+    # produced object-dtype bugs before.
+    ("country red", {"levels": ["red"]}),
+    ("country yellow, raw", {"levels": ["yellow"], "merge": False}),
+    ("oblast red + hours", {"oblast": "Kharkivska oblast", "levels": ["red"], "hours": [22, 23]}),
 ]
 
 
@@ -72,6 +79,7 @@ def main() -> int:
             merge=query.get("merge"),
             standing_days=query.get("standing_days", stats.STANDING_ALERT_DAYS),
             hours=query.get("hours"),
+            levels=query.get("levels"),
         )
         cases.append({"label": label, "query": query, "expected": payload})
         print(f"  {label:<28} alerts={payload['summary']['count']:>7}  mode={payload['mode']}")

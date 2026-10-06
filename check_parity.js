@@ -60,6 +60,7 @@ for (const { label, query, expected } of cases) {
     merge: query.merge === undefined ? null : query.merge,
     standingDays: "standing_days" in query ? query.standing_days : undefined,
     hours: query.hours || [],
+    levels: query.levels || [],
   });
 
   const problems = [];
