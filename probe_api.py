@@ -82,8 +82,22 @@ def describe(alerts: list[dict], label: str) -> None:
     if with_threats:
         print("   example threat:", json.dumps(with_threats[0]["threats"][0], ensure_ascii=False))
 
-    print("   example alert:", json.dumps(alerts[0], ensure_ascii=False)[:400])
-    print("   mapped to columns:", [alerts_api.area_names(a) for a in alerts[:5]])
+    # One example of each location_type, because how location_title relates to
+    # location_oblast / location_raion depends on it, and a city sitting inside
+    # an oblast is the case most likely to be mapped into the wrong column.
+    seen = {}
+    for a in alerts:
+        seen.setdefault(a.get("location_type"), a)
+    for kind, a in sorted(seen.items(), key=lambda kv: str(kv[0])):
+        print(f"   [{kind}] title={a.get('location_title')!r} oblast={a.get('location_oblast')!r} "
+              f"raion={a.get('location_raion')!r} uid={a.get('location_uid')!r}")
+        print(f"        -> {alerts_api.area_names(a)}")
+
+    ongoing = sum(1 for a in alerts if not a.get("finished_at"))
+    closed = sorted(a["started_at"] for a in alerts if a.get("finished_at"))
+    print(f"   ongoing (no finished_at): {ongoing}")
+    if closed:
+        print(f"   earliest *closed* alert : {closed[0]}")
 
 
 def main() -> int:
