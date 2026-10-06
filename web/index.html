@@ -334,8 +334,8 @@
 
 <div class="disclaimer" role="note">
   Source data comes from the
-  <a href="https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset" target="_blank" rel="noopener noreferrer">ukrainian-air-raid-sirens-dataset</a>,
-  and the processing behind them may contain mistakes — the
+  <a href="https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset" target="_blank" rel="noopener noreferrer">ukrainian-air-raid-sirens-dataset</a><!--
+  --><span id="src-second"></span>, and the processing behind them may contain mistakes — the
   <a href="https://github.com/JustJimer/ukraine-air-alert-stats" target="_blank" rel="noopener noreferrer">code is open</a>
   if you want to check something.
 </div>
@@ -666,6 +666,15 @@ async function boot() {
   // drops every alert before that date — four fifths of the record — and the
   // filter should not look like it simply found nothing.
   if (LEVELLED_FROM) $("level-since").textContent = `from ${day(LEVELLED_FROM)}`;
+
+  // Name the second source only once it is actually in the data, and give the
+  // date the handover happened rather than describing it vaguely. Written from
+  // the build so the two cannot drift apart.
+  if (meta.levelled_rows > 0 && LEVELLED_FROM) {
+    $("src-second").innerHTML = ` up to ${esc(day(LEVELLED_FROM))} and from
+      <a href="https://alerts.in.ua" target="_blank" rel="noopener noreferrer">alerts.in.ua</a>
+      since then`;
+  }
   if (META.generated_at) $("built").textContent = `data packed ${kyivTime(META.generated_at)} Kyiv`;
 
   for (const name of Object.keys(META.gazetteer)) $("oblast").append(new Option(name, name));
