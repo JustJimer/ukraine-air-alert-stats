@@ -137,10 +137,17 @@ Three properties worth knowing, because they shaped the design:
   having been thrown away at write time. `probe_api.py` reports what the API
   actually returns.
 
-**Historical data** is the frozen `official` CSV. `.github/workflows/daily-refresh.yml`
-still pings a Cloudflare Deploy Hook at 04:00 UTC to re-pull it. That is a
-no-op while the feed is dead — it rebuilds identical data — and is kept only
-so the project resumes by itself if the upstream parser is ever repaired.
+**Historical data** is the frozen `official` CSV, and it needs no schedule of
+its own. `npm run build` runs `build.py --update`, so every build the sync
+triggers re-downloads that CSV anyway — which is how a correction to the
+historical rows would arrive, upstream having made them before.
+
+A second workflow used to ping a Cloudflare Deploy Hook daily for exactly that
+purpose. It was retired once the sync replaced it: with the cutover in place
+nothing it fetched could change the page, because every alert after 2026-09-06
+comes from alerts.in.ua regardless of what the old CSV says. The
+`CLOUDFLARE_DEPLOY_HOOK_URL` secret it used is now unused and can be deleted.
+See `git show 7d1707f:.github/workflows/daily-refresh.yml` for that version.
 
 *Alternative:* GitHub Actions can do the whole build and deploy itself with
 `cloudflare/wrangler-action` and `CLOUDFLARE_API_TOKEN` +
