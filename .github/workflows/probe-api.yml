@@ -1,0 +1,36 @@
+name: Probe the alerts.in.ua API
+
+# Run by hand. Reports what the API actually returns and writes nothing, so it
+# is safe to run at any time and safe to run repeatedly.
+#
+# It exists because the token lives here as a secret and nowhere else, so this
+# is the only place the live response can be inspected without the token being
+# copied somewhere it should not be.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the gazetteer the name check compares against
+        run: |
+          pip install -r requirements.txt
+          python build.py
+
+      - name: Ask the API what it returns
+        env:
+          ALERTS_IN_UA_TOKEN: ${{ secrets.ALERTS_IN_UA_TOKEN }}
+        run: |
+          echo "token length: ${#ALERTS_IN_UA_TOKEN}"
+          if [ -z "$ALERTS_IN_UA_TOKEN" ]; then
+            echo "ALERTS_IN_UA_TOKEN is empty or unset." >&2
+            exit 1
+          fi
+          python probe_api.py --live
