@@ -288,6 +288,19 @@ def ranking(
     counts, finished = grouped.size(), grouped["duration_min"].count()
     hours = grouped["duration_min"].sum(min_count=1) / 60.0
 
+    # Per level, carrying the same shared treatment: an oblast-wide red alert
+    # is red for every raion under it. Without this the map could only colour
+    # by how many alerts an area had, not by what kind.
+    has_levels = "alert_level" in df.columns
+    by_level_own, by_level_shared = {}, {}
+    for level in ALERT_LEVELS:
+        if has_levels:
+            by_level_own[level] = own[own["alert_level"] == level].groupby(field, observed=True).size()
+            by_level_shared[level] = int((covers_all["alert_level"] == level).sum())
+        else:
+            by_level_own[level] = pd.Series(dtype="int64")
+            by_level_shared[level] = 0
+
     rows = []
     for name in children:
         count = int(counts.get(name, 0)) + shared_count
@@ -302,6 +315,8 @@ def ranking(
                 "own": int(counts.get(name, 0)),
                 "hours": round(total, 1),
                 "avg_min": round(total * 60.0 / done, 1) if done else None,
+                "red": int(by_level_own["red"].get(name, 0)) + by_level_shared["red"],
+                "yellow": int(by_level_own["yellow"].get(name, 0)) + by_level_shared["yellow"],
             }
         )
 

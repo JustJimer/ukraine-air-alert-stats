@@ -278,16 +278,27 @@
     let sharedCount = 0, sharedFinished = 0, sharedMinutes = 0;
     const count = new Map(), finished = new Map(), minutes = new Map();
 
+    // Per level, carrying the same shared treatment: an oblast-wide red alert
+    // is red for every raion under it.
+    const levelName = {};
+    for (const [code, name] of Object.entries(D.levelNames || {})) levelName[Number(code)] = name;
+    const perLevel = { red: new Map(), yellow: new Map() };
+    const sharedLevel = { red: 0, yellow: 0 };
+
     for (const i of rows) {
       const value = column[i];
       const duration = D.durations[i] === D.noDuration ? null : D.durations[i] / 60;
+      const level = D.levels ? levelName[D.levels[i]] : undefined;
+
       if (field !== "oblast" && value === 0) {
         sharedCount++;
         if (duration !== null) { sharedFinished++; sharedMinutes += duration; }
+        if (level && level in sharedLevel) sharedLevel[level]++;
         continue;
       }
       const name = names[value - offset];
       count.set(name, (count.get(name) || 0) + 1);
+      if (level && perLevel[level]) perLevel[level].set(name, (perLevel[level].get(name) || 0) + 1);
       if (duration !== null) {
         finished.set(name, (finished.get(name) || 0) + 1);
         minutes.set(name, (minutes.get(name) || 0) + duration);
@@ -305,6 +316,8 @@
         name, count: total, own,
         hours: round1(mins / 60),
         avg_min: done ? round1(mins / done) : null,
+        red: (perLevel.red.get(name) || 0) + sharedLevel.red,
+        yellow: (perLevel.yellow.get(name) || 0) + sharedLevel.yellow,
       });
     }
     out.sort((a, b) => b.count - a.count);

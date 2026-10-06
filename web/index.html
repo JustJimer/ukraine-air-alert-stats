@@ -205,6 +205,13 @@
   }
   .section-head h2 { margin-bottom: 12px; }
   .chip.mini { padding: 3px 11px; font-size: 11px; }
+  .map-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .toggle { display: inline-flex; }
+  .toggle .chip.mini { border-radius: 0; margin: 0; }
+  .toggle .chip.mini:first-child { border-radius: 999px 0 0 999px; }
+  .toggle .chip.mini:last-child { border-radius: 0 999px 999px 0; margin-left: -1px; }
+  .chip.mini.on { background: var(--nf-dark-green); color: var(--nf-neutral-2);
+                  border-color: var(--nf-dark-green); }
   h2 em { font-style: normal; color: var(--nf-green); text-transform: none; letter-spacing: 0; }
 
   .chart { background: var(--panel); border: 1px solid var(--line);
@@ -265,6 +272,10 @@
   .map {
     --m0: #fce8e2; --m1: #f9cbbc; --m2: #f9b4a0;
     --m3: #ff8b7c; --m4: #ff665b; --m5: #c62d1f;
+    /* Yellow through to red: in this mode the shade is the alert level, so the
+       ramp runs between the two colours the alert system itself uses. */
+    --l0: #ffcd29; --l1: #ffb62f; --l2: #ff9d3c;
+    --l3: #ff8257; --l4: #ff665b; --l5: #c62d1f;
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 10px; padding: 14px;
   }
@@ -440,6 +451,10 @@ const STORE_LAST = "airalert.last.v2";
 let META = null;
 let GEO = null;            // boundary shapes; null if they failed to load
 let LEVELLED_FROM = null;  // ISO date from which alerts carry a yellow/red level
+/* How the map is coloured: "count" or "level". Deliberately not part of the
+   saved or shared state — it is a way of looking at the same selection, not
+   part of what is selected. */
+let MAP_BY = "count";
 let HOURS = new Set();     // Kyiv hours selected on the hour chart
 let suspend = false;       // stops the cascade firing a reload mid-restore
 let MONTH_KEYS = [];       // month chart bar index -> "YYYY-MM"
@@ -755,6 +770,9 @@ function wire() {
     const bar = e.target.closest("[data-month], [data-hour]");
     if (bar?.dataset.month) return setPeriod(`${bar.dataset.month}-01`, lastDayOfMonth(bar.dataset.month));
     if (bar?.dataset.hour) return toggleHour(+bar.dataset.hour);
+
+    const how = e.target.closest("[data-map-by]");
+    if (how) { MAP_BY = how.dataset.mapBy; return load(); }
 
     const shape = e.target.closest("[data-map-area]");
     if (shape) return pickArea(shape.dataset.mapArea);
@@ -1347,6 +1365,13 @@ function hourChart(hours, selectedHours, avail) {
    areas across the steps, and the legend states the real range of each. */
 const MAP_STEPS = 6;
 
+/* A share needs enough alerts behind it to mean anything. Zakarpatska oblast
+   had 18 alerts in the first month and all of them happened to be red, which
+   painted it the same shade as Dnipropetrovska's 86% of 2,267 — one flipped
+   alert there moves the figure by six points. Below this many levelled alerts
+   an area is left unshaded rather than given a rate nobody should read. */
+const MIN_LEVELLED = 50;
+
 function mapScale(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const cuts = [];
@@ -1401,6 +1426,17 @@ function mapPanel(d, s) {
       : Object.keys(META.gazetteer)
   );
 
+  // Colour by how many alerts, or by how many of them were red. The second is
+  // only offered where there are levelled alerts to compare.
+  const levelled = [...rows.values()].filter(r => (r.red || 0) + (r.yellow || 0) > 0);
+  const canSplit = colouring && levelled.length > 0;
+  const byLevel = canSplit && MAP_BY === "level";
+  const levelledCount = r => (r.red || 0) + (r.yellow || 0);
+  const redShare = r => {
+    const both = levelledCount(r);
+    return both ? (r.red || 0) / both : null;
+  };
+
   const cuts = mapScale([...rows.values()].map(r => r.count));
   const box = s.oblast && GEO.oblasts[s.oblast]
     ? padBox(GEO.oblasts[s.oblast].box, 0.05) : GEO.viewBox;
@@ -1413,11 +1449,21 @@ function mapPanel(d, s) {
 
     const row = rows.get(name);
     const pick = selectable.has(name);
-    const fill = row ? `var(--m${stepOf(row.count, cuts)})` : "";
+    const share = row ? redShare(row) : null;
+    // In level mode the ramp runs yellow to red, because those are the colours
+    // the alert system itself uses — the shade is the thing being measured.
+    const sparse = row ? levelledCount(row) < MIN_LEVELLED : false;
+    const fill = !row ? ""
+      : byLevel ? (share === null || sparse
+          ? "var(--nf-neutral-1)" : `var(--l${Math.min(5, Math.floor(share * 6))})`)
+      : `var(--m${stepOf(row.count, cuts)})`;
 
     const tip = row
       ? `${name}<br><b>${num(row.count)}</b> alerts<br><b>${num(Math.round(row.hours))}</b> h total`
         + (row.avg_min != null ? `<br>average <b>${hm(row.avg_min)}</b>` : "")
+        + (share !== null ? `<br><b>${Math.round(share * 100)}%</b> red`
+            + ` <span class="hint">(${num(row.red)} red · ${num(row.yellow)} yellow${
+                sparse ? `, too few to compare` : ""})</span>` : "")
         + (pick ? `<br><span class="hint">click to filter</span>` : "")
       : `${name}<br>${colouring ? "no alerts in this selection" : "no separate figures"}`;
 
@@ -1456,16 +1502,36 @@ function mapPanel(d, s) {
   return `<section>
     <div class="section-head">
       <h2>${title}${selectable.size ? ` <em>· click an area to filter</em>` : ""}</h2>
-      ${s.oblast ? `<button class="chip mini" data-chart-reset="map">Reset area</button>` : ""}
+      <div class="map-tools">
+        ${canSplit ? `<span class="toggle">
+          <button class="chip mini ${byLevel ? "" : "on"}" data-map-by="count">Alerts</button
+          ><button class="chip mini ${byLevel ? "on" : ""}" data-map-by="level">Share red</button>
+        </span>` : ""}
+        ${s.oblast ? `<button class="chip mini" data-chart-reset="map">Reset area</button>` : ""}
+      </div>
     </div>
     <div class="map">
       <svg data-map viewBox="${box.map(v => v.toFixed(1)).join(" ")}"
            role="img" aria-label="${esc(`Alerts by ${level}`)}">
         ${paths}${outline}${labels}
       </svg>
-      ${mapLegend(cuts, [...rows.values()], colouring)}
+      ${byLevel ? levelLegend() : mapLegend(cuts, [...rows.values()], colouring)}
     </div>
   </section>`;
+}
+
+/* The yellow-to-red ramp, labelled by what it measures rather than by value:
+   the steps are even sixths, so stating them adds nothing. */
+function levelLegend() {
+  const swatches = [0, 1, 2, 3, 4, 5]
+    .map(i => `<span style="background: var(--l${i})"></span>`).join("");
+  return `<div class="legend">
+    <span>all yellow</span>
+    <span class="scale">${swatches}</span>
+    <span>all red</span>
+    <span class="none" style="margin-left:8px"></span>
+    <span>under ${MIN_LEVELLED} levelled alerts, or none</span>
+  </div>`;
 }
 
 /* Drop any label that lands on one already placed. Guessing from the shape's
