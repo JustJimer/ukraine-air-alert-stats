@@ -230,6 +230,32 @@ python -m airalert.cli --list-oblasts
 
 ## Data cleaning applied on load
 
+**Areas named differently by the two sources.** The old feed stopped before
+several renames took effect and alerts.in.ua knows only the current names, so
+the same place could arrive as two separate areas — one holding every alert up
+to 2026-09-07 and another holding everything since. Filtering to either gave
+half the history with no sign the rest existed.
+
+Two kinds, both normalised to the current form in `load_combined`:
+
+- **Three raions renamed** since the boundary data was published:
+  Krasnohradskyi → **Berestynskyi**, Chervonohradskyi → **Sheptytskyi**,
+  Volodymyr-Volynskyi → **Volodymyrskyi**. Both sources carry exactly 118
+  raions and differ in exactly these three, each pair sharing an oblast, the
+  old name last seen at the cutover and the new one first seen after it.
+- **Forty-nine cities merged with their hromada** by the old feed, as
+  `m. Kharkiv ta Kharkivska terytorialna hromada`, where the new source names
+  the two separately. All 49 records are hromada-level, so the hromada half is
+  what they were; the city is now a location in its own right and stays one.
+
+The second is derived rather than tabulated — take what follows `" ta "` —
+because the rule is exact and the feed is frozen, so no fiftieth case can
+appear. Matching on the name alone would not have been safe: three of them
+resolve to a name that exists elsewhere, and `Cherkaska terytorialna hromada`
+is also a place in Kramatorskyi raion, 600 km from Cherkasy. Those sit in other
+raions, which selection already separates, and no collision exists within any
+single raion — checked before the rule was trusted.
+
 **Duplicate rows.** ~39% of the upstream feed is repeated verbatim (113,845 of
 291,611 rows as of 2026-08-14). Two distinct alerts for the same area cannot
 share a start *and* end timestamp to the second, so identical rows are

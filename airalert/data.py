@@ -115,6 +115,30 @@ RENAMED_RAIONS = {
 }
 
 
+def unmerge_city_hromada(name):
+    """"m. Kharkiv ta Kharkivska terytorialna hromada" -> "Kharkivska ...".
+
+    The old feed named a city and its hromada as one area; alerts.in.ua names
+    them separately, so the same place arrived under two names either side of
+    the cutover. All 49 such records are hromada-level, so the hromada half is
+    what they were, and the city half is now a location in its own right.
+
+    Derived rather than tabulated, because the rule is exact and the feed is
+    frozen — no fiftieth case can appear. It was checked against the data
+    before being trusted: no (oblast, raion, hromada) collision exists inside
+    the official feed, so this merges nothing that was ever distinct, and seven
+    of the 49 unify with a live area of the same name in the same raion.
+
+    Name alone would not have been safe. Three of these resolve to a name that
+    exists elsewhere — "Cherkaska terytorialna hromada" is also a place in
+    Kramatorskyi raion, 600 km from Cherkasy — but those sit in other raions,
+    which selection already separates.
+    """
+    if isinstance(name, str) and name.startswith("m. ") and " ta " in name:
+        return name.split(" ta ", 1)[1]
+    return name
+
+
 def load_live() -> pd.DataFrame:
     """The alerts.in.ua archive, mapped onto this project's columns.
 
@@ -176,7 +200,10 @@ def load_combined(force_download: bool = False) -> pd.DataFrame:
     # would silently drop the old feed's last day and a half and replace it
     # with nothing, which looks exactly like a quiet period in the data.
     before = official[official["started_at"] < CUTOVER] if len(after) else official
-    before = before.assign(raion=before["raion"].replace(RENAMED_RAIONS))
+    before = before.assign(
+        raion=before["raion"].replace(RENAMED_RAIONS),
+        hromada=before["hromada"].map(unmerge_city_hromada).astype("string"),
+    )
 
     if "alert_level" not in before.columns:
         before = before.assign(alert_level=pd.Series(pd.NA, index=before.index, dtype="string"))
