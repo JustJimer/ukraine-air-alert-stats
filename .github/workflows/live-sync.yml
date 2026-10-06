@@ -89,4 +89,20 @@ jobs:
           git commit -m "Sync alerts from alerts.in.ua
 
           Automated daily pull. Pushing this is what triggers the rebuild."
-          git push
+
+          # The sweep takes a quarter of an hour, so the branch can easily have
+          # moved on since checkout — and a rejected push throws away a
+          # completed sweep of every region, which is what happened the first
+          # time this ran to completion. Rebase onto whatever landed and try
+          # again; this job only ever touches archive/, so a conflict is
+          # vanishingly unlikely.
+          for attempt in 1 2 3; do
+            if git pull --rebase origin "$GITHUB_REF_NAME" && git push; then
+              echo "pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "push attempt $attempt failed; retrying"
+            sleep 10
+          done
+          echo "could not push after 3 attempts" >&2
+          exit 1
