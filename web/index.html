@@ -266,6 +266,16 @@
   svg path.lv-line.yellow { stroke: #e8a300; }
   svg path.lv-line.red { stroke: var(--nf-red); }
   svg rect.lh-hit { cursor: default; }
+  /* Dimmed, not hidden: the level you are not filtering to is still the
+     comparison, so it stays legible while the chosen one leads. */
+  svg path.lv-line.muted { opacity: .26; }
+  .level-bar span.muted { opacity: .3; }
+  .level-keys span.muted { opacity: .45; }
+  .level-keys .showing {
+    margin-left: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--nf-neutral-2); background: var(--nf-dark-green);
+    border-radius: 999px; padding: 2px 7px;
+  }
 
   /* ---- map ---- */
   /* Six steps of the additional palette, light to dark. A sequential ramp
@@ -1624,6 +1634,14 @@ function levelBlock(d, s) {
   const since = LEVELLED_FROM ? day(LEVELLED_FROM) : null;
   const partial = d.declarations > total;
 
+  // This block deliberately keeps showing both levels while one is filtered —
+  // it is the comparison you are selecting against, and the figures above
+  // already answer "how much red". Unmarked, though, it simply looked like the
+  // filter had not worked, which is how it was first reported.
+  const chosen = s.level || "";
+  const off = level => (chosen && chosen !== level ? " muted" : "");
+  const mark = level => (chosen === level ? ` <span class="showing">shown above</span>` : "");
+
   return `<section class="levels">
     <div class="section-head">
       <h2>Yellow and red${since ? ` <em>· levels exist from ${esc(since)}</em>` : ""}</h2>
@@ -1631,21 +1649,24 @@ function levelBlock(d, s) {
     </div>
     <div class="chart">
       <div class="level-bar">
-        <span class="red" style="flex: ${red.count || 0}"></span>
-        <span class="yellow" style="flex: ${yellow.count || 0}"></span>
+        <span class="red${off("red")}" style="flex: ${red.count || 0}"></span>
+        <span class="yellow${off("yellow")}" style="flex: ${yellow.count || 0}"></span>
       </div>
       <div class="level-keys">
-        <span><i class="red"></i> <b>${num(red.count)}</b> red · ${share(red.count)}%
-          · ${num(Math.round(red.hours))} h</span>
-        <span><i class="yellow"></i> <b>${num(yellow.count)}</b> yellow · ${share(yellow.count)}%
-          · ${num(Math.round(yellow.hours))} h</span>
+        <span class="${off("red").trim()}"><i class="red"></i> <b>${num(red.count)}</b> red
+          · ${share(red.count)}% · ${num(Math.round(red.hours))} h${mark("red")}</span>
+        <span class="${off("yellow").trim()}"><i class="yellow"></i> <b>${num(yellow.count)}</b> yellow
+          · ${share(yellow.count)}% · ${num(Math.round(yellow.hours))} h${mark("yellow")}</span>
       </div>
-      ${levelHourChart(d.by_hour_level || {}, chartWidth() - 34)
+      ${levelHourChart(d.by_hour_level || {}, chartWidth() - 34, chosen)
         ? `<div class="level-hours">
              <div class="level-hours-head">By start hour, Kyiv time
                <em>· read-only; filter hours on the chart above</em></div>
-             ${levelHourChart(d.by_hour_level || {}, chartWidth() - 34)}
+             ${levelHourChart(d.by_hour_level || {}, chartWidth() - 34, chosen)}
            </div>` : ""}
+      ${chosen ? `<div class="note">Both levels are shown here on purpose: this is the
+        split the figures above are drawn from. The cards and the table cover
+        <b>${esc(chosen)}</b> only.</div>` : ""}
       ${partial ? `<div class="note">${num(d.declarations - total)} of the
         ${num(d.declarations)} declarations in this selection predate levels and are
         not counted here. ${s.level ? "The figures above cover only the chosen level."
@@ -1661,7 +1682,7 @@ function levelBlock(d, s) {
    when merging is on, while a level belongs to a declaration — a merged
    episode can span both. Stacking them into one bar would have put two
    different denominators in the same column without saying so. */
-function levelHourChart(by, avail) {
+function levelHourChart(by, avail, chosen) {
   const red = by.red || [], yellow = by.yellow || [];
   const max = Math.max(...red, ...yellow, 1);
   if (!red.some(Boolean) && !yellow.some(Boolean)) return "";
@@ -1692,8 +1713,8 @@ function levelHourChart(by, avail) {
        aria-label="Alerts by start hour, red against yellow">
       <text x="4" y="${pad - 10}">${num(max)} max</text>
       <line class="baseline" x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}"/>
-      <path class="lv-line yellow" d="${curve(yellow)}"/>
-      <path class="lv-line red" d="${curve(red)}"/>
+      <path class="lv-line yellow${chosen && chosen !== "yellow" ? " muted" : ""}" d="${curve(yellow)}"/>
+      <path class="lv-line red${chosen && chosen !== "red" ? " muted" : ""}" d="${curve(red)}"/>
       ${hits}${ticks}</svg>`;
 }
 
