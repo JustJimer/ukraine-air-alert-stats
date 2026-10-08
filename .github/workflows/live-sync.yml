@@ -14,11 +14,17 @@ name: Sync alerts from alerts.in.ua
 # https://devs.alerts.in.ua — free, granted on application.
 on:
   schedule:
-    # Timing barely matters: each run re-reads a full month per region and
-    # upserts on record id, so the archive repairs itself. A fortnight of
-    # failed runs costs nothing as long as one lands inside the month. 03:30
-    # UTC simply keeps it clear of the hour everything else runs on.
-    - cron: "30 3 * * *"
+    # 03:07 rather than 03:30. GitHub creates scheduled runs late when the
+    # requested minute is a busy one, and :30 is among the busiest: at :30 this
+    # fired at 10:26 and 10:47 UTC on consecutive days, about seven hours
+    # after it was asked for, with created and started times equal — so the
+    # delay was in creating the run, not in finding a runner.
+    #
+    # Nothing was lost by that. Each run re-reads a full month per region and
+    # upserts on record id, so the archive repairs itself and a fortnight of
+    # failures costs nothing as long as one run lands inside the month. The
+    # only thing a late run costs is the hour the page says it was updated.
+    - cron: "7 3 * * *"
   workflow_dispatch:
 
 # Each run rewrites the same file and pushes it, so two at once would conflict.

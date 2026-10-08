@@ -114,11 +114,18 @@ Workers Builds rebuilds on every push, but has no schedule of its own.
 is the only source carrying the yellow/red levels. It needs a free token,
 granted on application, held as the repository secret `ALERTS_IN_UA_TOKEN`.
 
-`.github/workflows/live-sync.yml` runs `sync_live.py` daily at 03:30 UTC. It
+`.github/workflows/live-sync.yml` runs `sync_live.py` daily at 03:07 UTC. It
 sweeps all 27 regions, appends to `archive/alerts_in_ua.csv`, and commits —
 and that commit is what triggers the rebuild, so no deploy hook is involved.
 On a day with nothing new there is no commit and no build, which is right,
 because the page would be identical.
+
+**Do not count on the hour.** GitHub creates scheduled runs late when the
+requested minute is a busy one. At `:30` this fired at 10:26 and 10:47 UTC on
+consecutive days — about seven hours late, with `created_at` equal to
+`run_started_at`, so the delay was in creating the run rather than in finding a
+runner. It is now `:07`, which is less contended. A late run costs nothing but
+the hour the page reports; see the first property below.
 
 Three properties worth knowing, because they shaped the design:
 
